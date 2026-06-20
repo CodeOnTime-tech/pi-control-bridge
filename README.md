@@ -70,8 +70,11 @@ Data from the legacy `~/.pi/bridge/` directory is migrated automatically on firs
 
 ## Slash commands
 
-- `/bridge:status` — bridge and backend status
-- `/bridge:link-telegram` — create Telegram link token
+- `/control-status` — bridge, backend and Telegram connection status
+- `/connect-telegram` — start Telegram binding; shows a direct link to open the bot
+
+Hub must return `bot_username` (or `bot_link`) from `POST /telegram/link-token` and Telegram
+connection info from `GET /me?device_token=...` for full status output.
 
 ## Manual bridge
 

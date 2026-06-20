@@ -1,11 +1,13 @@
-import { getBridgeConfig, getIpcBaseUrl } from "./ensure_bridge.ts";
+import { getIpcBaseUrl } from "./ensure_bridge.ts";
 import type {
   BridgeStatus,
+  ControlStatus,
   PendingCommand,
   RegisterSessionRequest,
   RegisterSessionResponse,
   SessionEventPayload,
 } from "../shared/types.ts";
+import type { TelegramLinkResponse } from "../shared/telegram.ts";
 
 async function ipcRequest<T>(
   path: string,
@@ -59,15 +61,12 @@ export async function getBridgeStatus(): Promise<BridgeStatus & { version?: stri
   >;
 }
 
-export async function createTelegramLinkToken(): Promise<{ token: string; expires_at: string }> {
-  const config = await getBridgeStatus();
-  if (!config.deviceId) {
-    throw new Error("Bridge device not registered");
-  }
-  const hubUrl = getBridgeConfig().hubUrl;
-  const response = await fetch(`${hubUrl}/telegram/link-token`, { method: "POST" });
-  if (!response.ok) {
-    throw new Error(`Link token request failed: ${response.status}`);
-  }
-  return (await response.json()) as { token: string; expires_at: string };
+export async function getControlStatus(): Promise<ControlStatus> {
+  return ipcRequest<ControlStatus>("/connection-status") as Promise<ControlStatus>;
+}
+
+export async function createTelegramLinkToken(): Promise<TelegramLinkResponse> {
+  return ipcRequest<TelegramLinkResponse>("/telegram/link-token", {
+    method: "POST",
+  }) as Promise<TelegramLinkResponse>;
 }

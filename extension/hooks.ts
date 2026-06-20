@@ -5,6 +5,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import {
   createTelegramLinkToken,
   getBridgeStatus,
+  getControlStatus,
   postSessionEvent,
   registerSession,
   unregisterSession,
@@ -12,6 +13,7 @@ import {
 } from "./bridge_client.ts";
 import { executeCommand } from "./command_handler.ts";
 import { ensureBridge, setBridgeConfigCwd } from "./ensure_bridge.ts";
+import { formatConnectTelegramMessage, formatControlStatusMessage } from "./messages.ts";
 
 interface SessionBinding {
   localId: string;
@@ -211,35 +213,46 @@ export function registerHooks(pi: ExtensionAPI): void {
     }
   });
 
-  pi.registerCommand("bridge:status", {
-    description: "Show pi-control-bridge status",
+  pi.registerCommand("control-status", {
+    description: "Show pi-control-bridge and Telegram connection status",
     handler: async (_args, ctx) => {
       try {
-        const status = await getBridgeStatus();
-        const message = [
-          `device: ${status.deviceId ?? "n/a"}`,
-          `sessions: ${status.activeSessions}`,
-          `backend: ${status.backendConnected ? "ok" : "degraded"}`,
-          `pending events: ${status.pendingEvents}`,
-        ].join("\n");
+        const ready = await ensureBridge();
+        if (!ready) {
+          const message = "Bridge is not running. Start a Pi session or run pi-bridge start.";
+          if (ctx.hasUI) ctx.ui.notify(message, "warning");
+          else console.error(message);
+          return;
+        }
+
+        const status = await getControlStatus();
+        const message = formatControlStatusMessage(status);
         if (ctx.hasUI) ctx.ui.notify(message, "info");
         else console.error(message);
       } catch (error) {
-        if (ctx.hasUI) ctx.ui.notify(`Bridge status error: ${String(error)}`, "error");
+        if (ctx.hasUI) ctx.ui.notify(`Control status error: ${String(error)}`, "error");
       }
     },
   });
 
-  pi.registerCommand("bridge:link-telegram", {
-    description: "Create Telegram link token for this device",
+  pi.registerCommand("connect-telegram", {
+    description: "Initialize Telegram control for this device",
     handler: async (_args, ctx) => {
       try {
-        const { token } = await createTelegramLinkToken();
-        const message = `Telegram link token: ${token}\nUse /start ${token} in the bot.`;
+        const ready = await ensureBridge();
+        if (!ready) {
+          const message = "Bridge is not running. Start a Pi session or run pi-bridge start.";
+          if (ctx.hasUI) ctx.ui.notify(message, "warning");
+          else console.error(message);
+          return;
+        }
+
+        const link = await createTelegramLinkToken();
+        const message = formatConnectTelegramMessage(link);
         if (ctx.hasUI) ctx.ui.notify(message, "info");
         else console.error(message);
       } catch (error) {
-        if (ctx.hasUI) ctx.ui.notify(`Link token error: ${String(error)}`, "error");
+        if (ctx.hasUI) ctx.ui.notify(`Telegram connect error: ${String(error)}`, "error");
       }
     },
   });

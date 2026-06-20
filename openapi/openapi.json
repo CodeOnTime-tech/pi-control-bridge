@@ -704,7 +704,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
               }
             }
           },
@@ -729,12 +731,33 @@
         "summary": "Create Link Token",
         "description": "Create a link token for Telegram binding.",
         "operationId": "create_link_token_telegram_link_token_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TelegramLinkTokenRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TelegramLinkTokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -992,6 +1015,110 @@
           "created_at"
         ],
         "title": "DeviceResponse"
+      },
+      "HubBotInfo": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "link": {
+            "type": "string",
+            "title": "Link"
+          }
+        },
+        "type": "object",
+        "title": "HubBotInfo"
+      },
+      "HubTelegramConnection": {
+        "properties": {
+          "linked": {
+            "type": "boolean",
+            "title": "Linked"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "chat_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "linked"
+        ],
+        "title": "HubTelegramConnection"
+      },
+      "MeResponse": {
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "title": "Device Id"
+          },
+          "telegram": {
+            "$ref": "#/components/schemas/HubTelegramConnection"
+          },
+          "bot": {
+            "$ref": "#/components/schemas/HubBotInfo"
+          }
+        },
+        "type": "object",
+        "title": "MeResponse"
+      },
+      "TelegramLinkTokenRequest": {
+        "properties": {
+          "device_token": {
+            "type": "string",
+            "title": "Device Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "device_token"
+        ],
+        "title": "TelegramLinkTokenRequest"
+      },
+      "TelegramLinkTokenResponse": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "expires_at": {
+            "type": "string",
+            "title": "Expires At"
+          },
+          "bot_username": {
+            "type": "string",
+            "title": "Bot Username"
+          },
+          "bot_link": {
+            "type": "string",
+            "title": "Bot Link"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token",
+          "expires_at"
+        ],
+        "title": "TelegramLinkTokenResponse"
       },
       "HTTPValidationError": {
         "properties": {

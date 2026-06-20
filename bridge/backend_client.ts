@@ -1,6 +1,12 @@
 import { hostname, platform } from "node:os";
 
 import type { Logger } from "../shared/logger.ts";
+import {
+  parseHubConnectionInfo,
+  parseTelegramLinkResponse,
+  type HubConnectionInfo,
+  type TelegramLinkResponse,
+} from "../shared/telegram.ts";
 import type { BridgeConfig, DeviceState } from "../shared/types.ts";
 
 export interface DeviceRegisterResult {
@@ -114,9 +120,15 @@ export class BackendClient {
   }
 
   async validateToken(deviceToken: string): Promise<{ device_id: string }> {
-    return this.request("GET", "/me", {
+    const info = await this.getConnectionInfo(deviceToken);
+    return { device_id: info.deviceId ?? "" };
+  }
+
+  async getConnectionInfo(deviceToken: string): Promise<HubConnectionInfo> {
+    const raw = await this.request<Record<string, unknown>>("GET", "/me", {
       query: { device_token: deviceToken },
     });
+    return parseHubConnectionInfo(raw);
   }
 
   async heartbeat(deviceToken: string): Promise<void> {
@@ -185,8 +197,11 @@ export class BackendClient {
     });
   }
 
-  async createLinkToken(): Promise<{ token: string; expires_at: string }> {
-    return this.request("POST", "/telegram/link-token");
+  async createLinkToken(deviceToken: string): Promise<TelegramLinkResponse> {
+    const raw = await this.request<Record<string, unknown>>("POST", "/telegram/link-token", {
+      body: { device_token: deviceToken },
+    });
+    return parseTelegramLinkResponse(raw);
   }
 
   toDeviceState(result: DeviceRegisterResult, fingerprint: string, previous?: DeviceState): DeviceState {

@@ -5,6 +5,7 @@ import { IPC_COMMAND_WAIT_TIMEOUT_MS } from "../shared/constants.ts";
 import type { Logger } from "../shared/logger.ts";
 import type {
   BridgeStatus,
+  ControlStatus,
   DeviceState,
   RegisterSessionRequest,
   SessionEventPayload,
@@ -37,7 +38,55 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
       pendingEvents: deps.eventSender.pendingEventsCount(),
       ipcPort: deps.ipcPort,
     };
-    return c.json({ ...status, version: "0.1.0" });
+    return c.json({ ...status, version: "0.2.0" });
+  });
+
+  app.get("/connection-status", async (c) => {
+    const state = deps.getDeviceState();
+    const base: ControlStatus = {
+      ok: true,
+      deviceId: state?.deviceId,
+      backendConnected: !deps.backend.isDegraded(),
+      degraded: deps.backend.isDegraded(),
+      activeSessions: deps.registry.size(),
+      pendingEvents: deps.eventSender.pendingEventsCount(),
+      ipcPort: deps.ipcPort,
+      version: "0.2.0",
+      telegram: { linked: false },
+      bot: {},
+    };
+
+    if (!state) {
+      return c.json(base);
+    }
+
+    try {
+      const connection = await deps.backend.getConnectionInfo(state.deviceToken);
+      return c.json({
+        ...base,
+        deviceId: connection.deviceId ?? base.deviceId,
+        telegram: connection.telegram,
+        bot: connection.bot,
+      } satisfies ControlStatus);
+    } catch (error) {
+      deps.logger.warn("Connection status request failed", { error: String(error) });
+      return c.json({ ...base, degraded: true }, 502);
+    }
+  });
+
+  app.post("/telegram/link-token", async (c) => {
+    const state = deps.getDeviceState();
+    if (!state) {
+      return c.json({ error: "Device not registered" }, 503);
+    }
+
+    try {
+      const result = await deps.backend.createLinkToken(state.deviceToken);
+      return c.json(result);
+    } catch (error) {
+      deps.logger.error("Telegram link token request failed", { error: String(error) });
+      return c.json({ error: String(error) }, 502);
+    }
   });
 
   app.get("/sessions", (c) => c.json({ items: deps.registry.list() }));

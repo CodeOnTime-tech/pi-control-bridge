@@ -85,3 +85,16 @@ export interface RegisterSessionResponse {
 export interface HealthResponse extends BridgeStatus {
   version: string;
 }
+
+export interface ControlStatus extends BridgeStatus {
+  version?: string;
+  telegram: {
+    linked: boolean;
+    username?: string;
+    chatId?: number;
+  };
+  bot: {
+    username?: string;
+    link?: string;
+  };
+}

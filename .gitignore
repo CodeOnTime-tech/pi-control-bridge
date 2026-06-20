@@ -80,9 +80,7 @@ out
 
 # Nuxt.js build / generate output
 .nuxt
-dist/**
-!dist/bridge/
-!dist/bridge/main.js
+dist/
 .output
 
 # Gatsby files
