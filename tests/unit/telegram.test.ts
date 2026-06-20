@@ -39,14 +39,18 @@ describe("telegram helpers", () => {
 
 describe("extension messages", () => {
   it("formats connect telegram message with direct link", () => {
-    const message = formatConnectTelegramMessage({
-      token: "tok",
-      expiresAt: "2026-06-20T12:00:00Z",
-      botUsername: "PiControlBot",
-      botLink: "https://t.me/PiControlBot?start=tok",
-    });
+    const message = formatConnectTelegramMessage(
+      {
+        token: "tok",
+        expiresAt: "2026-06-20T12:00:00Z",
+        botUsername: "PiControlBot",
+        botLink: "https://t.me/PiControlBot?start=tok",
+      },
+      { locale: "en", now: new Date("2026-06-20T11:55:00Z") },
+    );
     expect(message).toContain("https://t.me/PiControlBot?start=tok");
-    expect(message).toContain("2026-06-20T12:00:00Z");
+    expect(message).toMatch(/Valid for 5 minutes, until /);
+    expect(message).not.toContain("2026-06-20T12:00:00Z");
   });
 
   it("formats control status with telegram and bot info", () => {
