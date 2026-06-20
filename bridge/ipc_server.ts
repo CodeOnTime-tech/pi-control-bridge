@@ -77,6 +77,8 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
       } satisfies ControlStatus);
     }
 
+    void deps.syncPendingSessions();
+
     try {
       const connection = await deps.backend.getConnectionInfo(state.deviceToken);
       return c.json({
@@ -107,7 +109,8 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
   app.post("/sessions/register", async (c) => {
     const body = (await c.req.json()) as RegisterSessionRequest;
     const state = deps.getDeviceState();
-    const linked = state ? await deps.backend.isTelegramLinked(state.deviceToken) : false;
+    // Fresh check: user may have just completed /start bind in Telegram.
+    const linked = state ? await deps.backend.isTelegramLinked(state.deviceToken, 0) : false;
 
     if (!linked) {
       const record = {

@@ -9,6 +9,11 @@ import {
 } from "../shared/telegram.ts";
 import type { BridgeConfig, DeviceState } from "../shared/types.ts";
 
+/** Cache TTL when Telegram is already linked (stable state). */
+const TELEGRAM_LINKED_CACHE_TTL_MS = 30_000;
+/** Short TTL while unlinked so bind is detected within a few seconds. */
+const TELEGRAM_UNLINKED_CACHE_TTL_MS = 2_000;
+
 export interface DeviceRegisterResult {
   deviceId: string;
   deviceToken: string;
@@ -136,13 +141,26 @@ export class BackendClient {
     this.telegramLinkedCache = null;
   }
 
-  async isTelegramLinked(deviceToken: string | undefined, maxAgeMs = 30_000): Promise<boolean> {
+  private telegramLinkedCacheTtlMs(maxAgeMs?: number): number {
+    if (maxAgeMs !== undefined) return maxAgeMs;
+    if (!this.telegramLinkedCache) return 0;
+    return this.telegramLinkedCache.value
+      ? TELEGRAM_LINKED_CACHE_TTL_MS
+      : TELEGRAM_UNLINKED_CACHE_TTL_MS;
+  }
+
+  async isTelegramLinked(deviceToken: string | undefined, maxAgeMs?: number): Promise<boolean> {
     if (!deviceToken) {
       return false;
     }
 
     const now = Date.now();
-    if (this.telegramLinkedCache && now - this.telegramLinkedCache.checkedAt < maxAgeMs) {
+    const cacheTtl = this.telegramLinkedCacheTtlMs(maxAgeMs);
+    if (
+      this.telegramLinkedCache &&
+      cacheTtl > 0 &&
+      now - this.telegramLinkedCache.checkedAt < cacheTtl
+    ) {
       return this.telegramLinkedCache.value;
     }
 

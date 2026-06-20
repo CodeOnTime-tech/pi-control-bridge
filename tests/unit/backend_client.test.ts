@@ -1,0 +1,96 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { BackendClient } from "../../bridge/backend_client.ts";
+import type { Logger } from "../../shared/logger.ts";
+import type { BridgeConfig } from "../../shared/types.ts";
+
+const config: BridgeConfig = {
+  hubUrl: "http://127.0.0.1:8000",
+  pollIntervalSec: 2,
+  heartbeatIntervalSec: 15,
+  commandBatchSize: 10,
+  ipcPort: 9473,
+  bridgeDataDir: "/tmp/pi-bridge",
+  bridgeLogLevel: "ERROR",
+  autoStartBridge: true,
+};
+
+const logger = {
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+} as unknown as Logger;
+
+describe("BackendClient.isTelegramLinked cache", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: async () => ({
+          device_id: "device-1",
+          telegram: { linked: false },
+        }),
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("uses short TTL while unlinked and long TTL while linked", async () => {
+    const client = new BackendClient(config, logger);
+
+    await expect(client.isTelegramLinked("token-1")).resolves.toBe(false);
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => ({
+        device_id: "device-1",
+        telegram: { linked: true },
+      }),
+    } as Response);
+
+    vi.advanceTimersByTime(2_500);
+    await expect(client.isTelegramLinked("token-1")).resolves.toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(2);
+
+    vi.mocked(fetch).mockClear();
+    vi.advanceTimersByTime(5_000);
+    await expect(client.isTelegramLinked("token-1")).resolves.toBe(true);
+    expect(fetch).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(30_000);
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      json: async () => ({
+        device_id: "device-1",
+        telegram: { linked: true },
+      }),
+    } as Response);
+    await expect(client.isTelegramLinked("token-1")).resolves.toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("force refresh bypasses cache", async () => {
+    const client = new BackendClient(config, logger);
+
+    await client.isTelegramLinked("token-1");
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    await client.isTelegramLinked("token-1", 0);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+});

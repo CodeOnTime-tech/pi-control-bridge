@@ -59,7 +59,10 @@ export function startPollerLoop(
     if (stopped) return;
     const state = getDeviceState();
     if (!state) return;
-    const telegramLinked = await backend.isTelegramLinked(state.deviceToken);
+    const telegramLinked = await backend.isTelegramLinked(
+      state.deviceToken,
+      previousLinked ? undefined : 0,
+    );
     if (telegramLinked && !previousLinked) {
       await onTelegramLinked?.();
     }
