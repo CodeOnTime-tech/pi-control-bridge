@@ -28,7 +28,7 @@ Or add to `~/.pi/agent/settings.json`:
 Config is loaded from JSON files (no environment variables). Priority from low to high:
 
 1. **Defaults** — built into the package
-2. **User config** — `~/.pi/bridge/config.json`
+2. **User config** — `~/.pi/agent/bridge/config.json`
 3. **Project config** — `.pi/bridge.json` (nearest ancestor of Pi `cwd`)
 
 Copy [`bridge.config.example.json`](bridge.config.example.json) as a starting point.
@@ -38,15 +38,17 @@ Copy [`bridge.config.example.json`](bridge.config.example.json) as a starting po
 | `hub_url` | `http://127.0.0.1:8000` | pi-control-hub base URL |
 | `poll_interval_sec` | `2` | Command polling interval |
 | `heartbeat_interval_sec` | `15` | Device heartbeat interval |
-| `bridge_data_dir` | `~/.pi/bridge` | State and retry queue directory |
+| `bridge_data_dir` | `~/.pi/agent/bridge` | State and retry queue directory |
 | `ipc_port` | `9473` | Local IPC HTTP port |
 | `auto_start_bridge` | `true` | Auto-start bridge on session |
 
-Runtime state (secrets): `~/.pi/bridge/state.json` (`device_token`, `device_id`).
+Runtime state (secrets): `~/.pi/agent/bridge/state.json` (`device_token`, `device_id`).
+
+Data from the legacy `~/.pi/bridge/` directory is migrated automatically on first load.
 
 ### Example user config
 
-`~/.pi/bridge/config.json`:
+`~/.pi/agent/bridge/config.json`:
 
 ```json
 {

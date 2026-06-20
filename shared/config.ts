@@ -2,17 +2,17 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { getAgentDir } from "./agent_dir.ts";
 import {
   DEFAULT_HUB_URL,
-  DEFAULT_BRIDGE_DATA_DIR,
   DEFAULT_BRIDGE_LOG_LEVEL,
   DEFAULT_COMMAND_BATCH_SIZE,
   DEFAULT_HEARTBEAT_INTERVAL_SEC,
   DEFAULT_IPC_PORT,
   DEFAULT_POLL_INTERVAL_SEC,
   PROJECT_CONFIG_RELATIVE_PATH,
-  USER_CONFIG_RELATIVE_PATH,
 } from "./constants.ts";
+import { defaultBridgeDataDir, migrateLegacyBridgePaths } from "./migrate.ts";
 import type { BridgeConfig, BridgeConfigFile } from "./types.ts";
 
 function expandHome(path: string): string {
@@ -35,7 +35,7 @@ function defaultConfig(): BridgeConfig {
     heartbeatIntervalSec: DEFAULT_HEARTBEAT_INTERVAL_SEC,
     commandBatchSize: DEFAULT_COMMAND_BATCH_SIZE,
     bridgeLogLevel: DEFAULT_BRIDGE_LOG_LEVEL,
-    bridgeDataDir: expandHome(DEFAULT_BRIDGE_DATA_DIR),
+    bridgeDataDir: defaultBridgeDataDir(),
     ipcPort: DEFAULT_IPC_PORT,
     autoStartBridge: true,
   };
@@ -79,7 +79,7 @@ function applyConfigFile(base: BridgeConfig, file: BridgeConfigFile): BridgeConf
 }
 
 export function userConfigPath(): string {
-  return join(homedir(), USER_CONFIG_RELATIVE_PATH);
+  return join(getAgentDir(), "bridge", "config.json");
 }
 
 /** Walk up from startDir and return the nearest project bridge config path. */
@@ -101,15 +101,21 @@ export interface LoadBridgeConfigOptions {
   projectConfigPath?: string | null;
   /** Override user config path (tests). Pass `null` to skip user config. */
   userConfigPath?: string | null;
+  /** Skip legacy path migration (tests). */
+  skipMigration?: boolean;
 }
 
 /**
  * Load bridge config. Priority (low → high):
  * 1. defaults
- * 2. `~/.pi/bridge/config.json`
+ * 2. `~/.pi/agent/bridge/config.json`
  * 3. `.pi/bridge.json` in project (nearest ancestor of cwd)
  */
 export function loadBridgeConfig(options: LoadBridgeConfigOptions = {}): BridgeConfig {
+  if (!options.skipMigration) {
+    migrateLegacyBridgePaths();
+  }
+
   let config = defaultConfig();
 
   const userPath =

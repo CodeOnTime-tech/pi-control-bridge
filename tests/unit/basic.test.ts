@@ -1,8 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { getAgentDir } from "../../shared/agent_dir.ts";
 import { loadBridgeConfig } from "../../shared/config.ts";
 import { SessionRegistry } from "../../bridge/registry.ts";
 import {
@@ -11,17 +12,20 @@ import {
   DEFAULT_IPC_PORT,
   DEFAULT_POLL_INTERVAL_SEC,
 } from "../../shared/constants.ts";
+import { migrateLegacyBridgePaths } from "../../shared/migrate.ts";
 
 describe("loadBridgeConfig", () => {
   it("uses defaults when no config files exist", () => {
     const config = loadBridgeConfig({
       projectConfigPath: null,
       userConfigPath: null,
+      skipMigration: true,
     });
     expect(config.hubUrl).toBe(DEFAULT_HUB_URL);
     expect(config.pollIntervalSec).toBe(DEFAULT_POLL_INTERVAL_SEC);
     expect(config.heartbeatIntervalSec).toBe(DEFAULT_HEARTBEAT_INTERVAL_SEC);
     expect(config.ipcPort).toBe(DEFAULT_IPC_PORT);
+    expect(config.bridgeDataDir).toBe(join(getAgentDir(), "bridge"));
   });
 
   it("merges user config over defaults", () => {
@@ -35,6 +39,7 @@ describe("loadBridgeConfig", () => {
     const config = loadBridgeConfig({
       projectConfigPath: null,
       userConfigPath: userPath,
+      skipMigration: true,
     });
     expect(config.hubUrl).toBe("http://user:8000");
     expect(config.ipcPort).toBe(1111);
@@ -60,6 +65,7 @@ describe("loadBridgeConfig", () => {
     const config = loadBridgeConfig({
       userConfigPath: userPath,
       projectConfigPath: projectPath,
+      skipMigration: true,
     });
     expect(config.hubUrl).toBe("http://project:9000");
     expect(config.ipcPort).toBe(1111);
@@ -80,9 +86,36 @@ describe("loadBridgeConfig", () => {
     const config = loadBridgeConfig({
       cwd: nested,
       userConfigPath: null,
+      skipMigration: true,
     });
     expect(config.hubUrl).toBe("http://walk:7000");
     rmSync(root, { recursive: true, force: true });
+  });
+
+  it("migrates legacy ~/.pi/bridge into ~/.pi/agent/bridge", () => {
+    const tempHome = mkdtempSync(join(tmpdir(), "pi-bridge-migrate-"));
+    const legacyDir = join(tempHome, ".pi", "bridge");
+    mkdirSync(legacyDir, { recursive: true });
+    writeFileSync(join(legacyDir, "state.json"), '{"deviceId":"legacy"}');
+
+    const previousHome = process.env.HOME;
+    const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+    process.env.HOME = tempHome;
+    delete process.env.PI_CODING_AGENT_DIR;
+
+    try {
+      migrateLegacyBridgePaths();
+      const target = join(tempHome, ".pi", "agent", "bridge", "state.json");
+      expect(existsSync(target)).toBe(true);
+      expect(readFileSync(target, "utf-8")).toContain("legacy");
+      expect(existsSync(legacyDir)).toBe(false);
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+      rmSync(tempHome, { recursive: true, force: true });
+    }
   });
 });
 
