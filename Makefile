@@ -23,8 +23,8 @@ check:
 
 version:
 	$(NPM) version patch --no-git-tag-version
-	git commit -m "Bump version to $(VERSION)"
 	git add package.json package-lock.json
+	git commit -m "Bump version to $(VERSION)"
 	git push
 
 stop: build
