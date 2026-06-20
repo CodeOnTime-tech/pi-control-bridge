@@ -124,6 +124,7 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
         mode: body.mode,
         registeredAt: new Date().toISOString(),
         hubPending: true,
+        status: body.status ?? "running",
       };
       deps.registry.register(record);
       deps.onSessionRegistered?.();
@@ -153,6 +154,7 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
         pid: body.pid,
         mode: body.mode,
         registeredAt: new Date().toISOString(),
+        status: body.status ?? result.status,
       };
       deps.registry.register(record);
       deps.onSessionRegistered?.();
@@ -205,6 +207,13 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
       return c.json({ error: "Session not found" }, 404);
     }
     const event = (await c.req.json()) as SessionEventPayload;
+    if (event.status) {
+      deps.registry.updateStatus(localId, event.status);
+    }
+    if (session.hubPending) {
+      await deps.eventSender.enqueue(session.externalSessionId, event);
+      return c.json({ ok: true });
+    }
     await deps.eventSender.send(session.externalSessionId, event);
     return c.json({ ok: true });
   });

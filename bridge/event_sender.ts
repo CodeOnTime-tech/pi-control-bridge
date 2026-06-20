@@ -17,6 +17,20 @@ export class EventSender {
     return this.pendingCount;
   }
 
+  async enqueue(externalSessionId: string, event: SessionEventPayload): Promise<void> {
+    this.pendingCount += 1;
+    this.retryQueue.enqueue({
+      externalSessionId,
+      event,
+      attempts: 0,
+    });
+    this.logger.debug("Session event queued", {
+      externalSessionId,
+      eventId: event.eventId,
+      eventType: event.eventType,
+    });
+  }
+
   async send(externalSessionId: string, event: SessionEventPayload): Promise<void> {
     const state = this.getDeviceState();
     if (!state) {
@@ -25,10 +39,7 @@ export class EventSender {
     }
     const telegramLinked = await this.backend.isTelegramLinked(state.deviceToken);
     if (!telegramLinked) {
-      this.logger.debug("Skip session event: telegram not linked", {
-        externalSessionId,
-        eventId: event.eventId,
-      });
+      await this.enqueue(externalSessionId, event);
       return;
     }
 
@@ -47,12 +58,7 @@ export class EventSender {
         correlationId: this.backend.getLastCorrelationId(),
       });
     } catch (error) {
-      this.pendingCount += 1;
-      this.retryQueue.enqueue({
-        externalSessionId,
-        event,
-        attempts: 0,
-      });
+      await this.enqueue(externalSessionId, event);
       this.logger.warn("Session event queued for retry", {
         externalSessionId,
         eventId: event.eventId,

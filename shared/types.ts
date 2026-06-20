@@ -41,6 +41,7 @@ export interface LocalSessionRecord {
   mode: string;
   registeredAt: string;
   hubPending?: boolean;
+  status?: string;
 }
 
 export interface PendingCommand {

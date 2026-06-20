@@ -30,6 +30,12 @@ export class SessionRegistry {
     this.hubToLocal.set(hubSessionId, localId);
   }
 
+  updateStatus(localId: string, status: string): void {
+    const session = this.sessions.get(localId);
+    if (!session) return;
+    session.status = status;
+  }
+
   listPendingHubSync(): LocalSessionRecord[] {
     return this.list().filter((session) => session.hubPending);
   }

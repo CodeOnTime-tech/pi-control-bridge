@@ -13,6 +13,7 @@ import { SessionRegistry } from "./registry.ts";
 
 export class BridgeRuntime {
   private deviceState: DeviceState | null = null;
+  private eventSender?: EventSender;
   private stopHeartbeat?: () => void;
   private stopPoller?: () => void;
   private ipcClose?: () => void;
@@ -34,6 +35,7 @@ export class BridgeRuntime {
       this.logger,
       () => this.deviceState,
     );
+    this.eventSender = eventSender;
 
     const dispatcher = new CommandDispatcher(
       this.registry,
@@ -161,12 +163,13 @@ export class BridgeRuntime {
           title: session.title,
           project_path: session.projectPath,
           cwd: session.cwd,
-          status: "running",
+          status: session.status ?? "running",
         });
         this.registry.markHubSynced(session.localId, result.sessionId);
         this.logger.info("Pending session synced to hub", {
           localId: session.localId,
           hubSessionId: result.sessionId,
+          status: session.status ?? "running",
         });
       } catch (error) {
         this.logger.warn("Pending session sync failed", {
@@ -175,6 +178,8 @@ export class BridgeRuntime {
         });
       }
     }
+
+    await this.eventSender?.flushRetryQueue();
   }
 
   scheduleShutdownIfIdle(): boolean {

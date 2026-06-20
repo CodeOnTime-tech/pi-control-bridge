@@ -59,7 +59,7 @@ describe("createIpcApp", () => {
 
   it("registers session locally when telegram is not linked", async () => {
     const registry = new SessionRegistry();
-    const eventSender = { send: vi.fn(), pendingEventsCount: () => 0 } as unknown as EventSender;
+    const eventSender = { send: vi.fn(), enqueue: vi.fn(), pendingEventsCount: () => 0 } as unknown as EventSender;
     const deps = createDeps(registry, eventSender);
     deps.backend.isTelegramLinked = vi.fn().mockResolvedValue(false);
     const app = createIpcApp(deps);
@@ -73,13 +73,16 @@ describe("createIpcApp", () => {
         cwd: "/tmp",
         pid: 1,
         mode: "tui",
+        status: "waiting_user",
       }),
     });
 
     expect(response.status).toBe(200);
     const body = (await response.json()) as { hubSessionId: string; status: string };
     expect(body.status).toBe("pending");
-    expect(registry.listPendingHubSync()).toHaveLength(1);
+    const pending = registry.listPendingHubSync();
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.status).toBe("waiting_user");
     expect(deps.ensureHubDeviceRegistered).not.toHaveBeenCalled();
   });
 });
