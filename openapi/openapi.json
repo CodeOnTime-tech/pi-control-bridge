@@ -1211,6 +1211,17 @@
             ],
             "title": "Title"
           },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
           "project_path": {
             "anyOf": [
               {
@@ -1284,6 +1295,17 @@
               }
             ],
             "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
           },
           "project_path": {
             "anyOf": [

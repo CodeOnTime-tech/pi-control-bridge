@@ -15,6 +15,7 @@ import {
 import { executeCommand } from "./command_handler.ts";
 import { ensureBridge, setBridgeConfigCwd } from "./ensure_bridge.ts";
 import { formatConnectTelegramMessage, formatControlStatusMessage } from "./messages.ts";
+import { buildSessionMetadata } from "./session_metadata.ts";
 
 interface SessionBinding {
   localId: string;
@@ -52,6 +53,17 @@ async function postEvent(
       }),
     );
   }
+}
+
+async function postSessionMetadata(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  localId: string,
+  options?: { messages?: unknown[] },
+): Promise<void> {
+  const payload = buildSessionMetadata(pi, ctx, options);
+  if (Object.keys(payload).length === 0) return;
+  await postEvent(localId, "session_metadata", undefined, payload);
 }
 
 function startCommandConsumer(
@@ -137,6 +149,7 @@ async function handleSessionStart(pi: ExtensionAPI, ctx: ExtensionContext): Prom
   sessions.set(localId, { localId, consumerAbort });
   startCommandConsumer(pi, ctx, localId, consumerAbort.signal);
   await postEvent(localId, "session_start", "running");
+  await postSessionMetadata(pi, ctx, localId);
 }
 
 async function handleSessionShutdown(ctx: ExtensionContext): Promise<void> {
@@ -217,15 +230,19 @@ export function registerHooks(pi: ExtensionAPI): void {
     });
   });
 
-  pi.on("agent_end", (_event, ctx) => {
+  pi.on("agent_end", (event, ctx) => {
+    const localId = ctx.sessionManager.getSessionId();
     const status = ctx.isIdle() ? "waiting_user" : "running";
-    void postEvent(ctx.sessionManager.getSessionId(), "agent_end", status);
+    void postEvent(localId, "agent_end", status);
+    void postSessionMetadata(pi, ctx, localId, { messages: event.messages });
   });
 
-  pi.on("turn_end", (_event, ctx) => {
+  pi.on("turn_end", (event, ctx) => {
+    const localId = ctx.sessionManager.getSessionId();
     if (ctx.isIdle()) {
-      void postEvent(ctx.sessionManager.getSessionId(), "session_idle", "waiting_user");
+      void postEvent(localId, "session_idle", "waiting_user");
     }
+    void postSessionMetadata(pi, ctx, localId, { messages: [event.message] });
   });
 
   pi.registerCommand("control-status", {
