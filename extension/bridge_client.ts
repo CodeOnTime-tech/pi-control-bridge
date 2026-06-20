@@ -38,6 +38,10 @@ export async function unregisterSession(localId: string): Promise<void> {
   });
 }
 
+export async function requestBridgeShutdownIfIdle(): Promise<void> {
+  await ipcRequest("/shutdown-if-idle", { method: "POST" });
+}
+
 export async function postSessionEvent(
   localId: string,
   event: SessionEventPayload,

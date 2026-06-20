@@ -8,6 +8,7 @@ import {
   getControlStatus,
   postSessionEvent,
   registerSession,
+  requestBridgeShutdownIfIdle,
   unregisterSession,
   waitForCommand,
 } from "./bridge_client.ts";
@@ -141,20 +142,35 @@ async function handleSessionStart(pi: ExtensionAPI, ctx: ExtensionContext): Prom
 async function handleSessionShutdown(ctx: ExtensionContext): Promise<void> {
   const localId = ctx.sessionManager.getSessionId();
   const binding = sessions.get(localId);
-  if (!binding) return;
 
-  binding.consumerAbort.abort();
-  sessions.delete(localId);
+  if (binding) {
+    binding.consumerAbort.abort();
+    await postEvent(localId, "session_shutdown", "offline");
+    sessions.delete(localId);
+
+    try {
+      await unregisterSession(localId);
+    } catch (error) {
+      console.error(
+        JSON.stringify({
+          level: "WARN",
+          message: "Session bridge unregister failed",
+          error: String(error),
+        }),
+      );
+    }
+  }
+
+  if (sessions.size > 0) return;
+
   setBridgeConfigCwd(undefined);
-
-  await postEvent(localId, "session_shutdown", "offline");
   try {
-    await unregisterSession(localId);
+    await requestBridgeShutdownIfIdle();
   } catch (error) {
     console.error(
       JSON.stringify({
         level: "WARN",
-        message: "Session bridge unregister failed",
+        message: "Bridge idle shutdown request failed",
         error: String(error),
       }),
     );

@@ -50,6 +50,8 @@ export class BridgeRuntime {
       ipcPort: this.config.ipcPort,
       getDeviceState: () => this.deviceState,
       onEmptyRegistry: () => this.scheduleShutdownIfIdle(),
+      onSessionRegistered: () => this.cancelScheduledShutdown(),
+      scheduleShutdownIfIdle: () => this.scheduleShutdownIfIdle(),
     });
     this.ipcClose = ipc.close;
 
@@ -100,7 +102,8 @@ export class BridgeRuntime {
     this.logger.info("Device registered", { deviceId: this.deviceState.deviceId });
   }
 
-  private scheduleShutdownIfIdle(): void {
+  scheduleShutdownIfIdle(): boolean {
+    if (this.registry.size() > 0) return false;
     if (this.shutdownTimer) clearTimeout(this.shutdownTimer);
     this.shutdownTimer = setTimeout(() => {
       if (this.registry.size() === 0) {
@@ -109,6 +112,12 @@ export class BridgeRuntime {
         process.exit(0);
       }
     }, 30_000);
+    return true;
+  }
+
+  cancelScheduledShutdown(): void {
+    if (this.shutdownTimer) clearTimeout(this.shutdownTimer);
+    this.shutdownTimer = undefined;
   }
 
   stop(): void {

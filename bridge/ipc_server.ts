@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 
-import { IPC_COMMAND_WAIT_TIMEOUT_MS } from "../shared/constants.ts";
+import { IPC_COMMAND_WAIT_TIMEOUT_MS, PACKAGE_VERSION } from "../shared/constants.ts";
 import type { Logger } from "../shared/logger.ts";
 import type {
   BridgeStatus,
@@ -22,6 +22,8 @@ export interface IpcServerDeps {
   ipcPort: number;
   getDeviceState: () => DeviceState | null;
   onEmptyRegistry?: () => void;
+  onSessionRegistered?: () => void;
+  scheduleShutdownIfIdle?: () => boolean;
 }
 
 export function createIpcApp(deps: IpcServerDeps): Hono {
@@ -38,7 +40,7 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
       pendingEvents: deps.eventSender.pendingEventsCount(),
       ipcPort: deps.ipcPort,
     };
-    return c.json({ ...status, version: "0.2.0" });
+    return c.json({ ...status, version: PACKAGE_VERSION });
   });
 
   app.get("/connection-status", async (c) => {
@@ -51,7 +53,7 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
       activeSessions: deps.registry.size(),
       pendingEvents: deps.eventSender.pendingEventsCount(),
       ipcPort: deps.ipcPort,
-      version: "0.2.0",
+      version: PACKAGE_VERSION,
       telegram: { linked: false },
       bot: {},
     };
@@ -119,6 +121,7 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
         registeredAt: new Date().toISOString(),
       };
       deps.registry.register(record);
+      deps.onSessionRegistered?.();
       deps.logger.info("Session registered", {
         deviceId: state.deviceId,
         externalSessionId: body.externalSessionId,
@@ -129,6 +132,11 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
       deps.logger.error("Session register failed", { error: String(error) });
       return c.json({ error: String(error) }, 502);
     }
+  });
+
+  app.post("/shutdown-if-idle", (c) => {
+    const scheduled = deps.scheduleShutdownIfIdle?.() ?? false;
+    return c.json({ scheduled, activeSessions: deps.registry.size() });
   });
 
   app.delete("/sessions/:localId", (c) => {
