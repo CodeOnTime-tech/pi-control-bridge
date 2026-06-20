@@ -19,9 +19,11 @@ Or add to `~/.pi/agent/settings.json`:
 
 ```json
 {
-  "packages": ["git:github.com/CodeOnTime-tech/pi-control-bridge@main"]
+  "packages": ["npm:pi-control-bridge"]
 }
 ```
+
+The npm package ships a prebuilt `dist/bridge/main.js` — no build step is required after `pi update`.
 
 ## Configuration
 

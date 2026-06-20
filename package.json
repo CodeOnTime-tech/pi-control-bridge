@@ -1,6 +1,6 @@
 {
   "name": "pi-control-bridge",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Pi agent bridge extension and singleton runtime for pi-control-hub integration.",
   "keywords": ["pi-package", "pi-extension", "bridge", "control-hub"],
   "license": "MIT",
@@ -21,13 +21,20 @@
   "bin": {
     "pi-bridge": "./dist/bridge/main.js"
   },
+  "files": [
+    "dist/bridge/main.js",
+    "extension/",
+    "shared/",
+    "bridge.config.example.json",
+    "README.md"
+  ],
   "pi": {
     "extensions": ["./extension/index.ts"]
   },
   "scripts": {
     "build": "esbuild bridge/main.ts --bundle --platform=node --format=esm --outfile=dist/bridge/main.js --banner:js=\"#!/usr/bin/env node\"",
+    "prepublishOnly": "npm run build",
     "test": "vitest run",
-    "check": "tsc --noEmit",
-    "postinstall": "npm run build --if-present"
+    "check": "tsc --noEmit"
   }
 }

@@ -22,10 +22,10 @@ export function getBridgeConfig() {
   return loadBridgeConfig(configOptions());
 }
 
-function resolveBridgeBin(): string {
+function resolveBridgeBin(): { bin: string; built: boolean } {
   const built = join(packageRoot, "dist", "bridge", "main.js");
-  if (existsSync(built)) return built;
-  return join(packageRoot, "bridge", "main.ts");
+  if (existsSync(built)) return { bin: built, built: true };
+  return { bin: join(packageRoot, "bridge", "main.ts"), built: false };
 }
 
 export async function isBridgeRunning(): Promise<boolean> {
@@ -46,13 +46,20 @@ export async function ensureBridge(): Promise<boolean> {
   const config = getBridgeConfig();
   if (!config.autoStartBridge) return false;
 
-  const bin = resolveBridgeBin();
-  const isTs = bin.endsWith(".ts");
-  const args = isTs
-    ? ["--experimental-strip-types", bin, "start"]
-    : [bin, "start"];
+  const { bin, built } = resolveBridgeBin();
+  if (!built) {
+    console.error(
+      JSON.stringify({
+        level: "ERROR",
+        message:
+          "pi-control-bridge: dist/bridge/main.js missing. Reinstall the package (npm:pi-control-bridge).",
+        packageRoot,
+      }),
+    );
+    return false;
+  }
 
-  const child = spawn(process.execPath, args, {
+  const child = spawn(process.execPath, [bin, "start"], {
     detached: true,
     stdio: "ignore",
     env: process.env,
