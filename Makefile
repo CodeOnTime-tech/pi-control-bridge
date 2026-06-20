@@ -2,7 +2,7 @@ BASEDIR := $(CURDIR)
 SHELL := /bin/bash
 NPM ?= npm
 
-.PHONY: help install build test check publish release bridge-stop
+.PHONY: help install build test check version publish release bridge-stop
 
 help: 
 	@echo "Usage: make <target>"
@@ -21,10 +21,15 @@ test:
 check: 
 	$(NPM) run check
 
+version:
+	$(NPM) version patch --no-git-tag-version
+	git commit -m "Bump version to $(VERSION)"
+	git push
+
 stop: build
 	node dist/bridge/main.js stop
 
 publish: build 
 	$(NPM) publish
 
-release: check test publish 
+release: check test version publish 
