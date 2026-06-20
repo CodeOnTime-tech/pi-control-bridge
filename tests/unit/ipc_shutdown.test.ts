@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { BackendClient } from "../../bridge/backend_client.ts";
+import type { EventSender } from "../../bridge/event_sender.ts";
 import { createIpcApp } from "../../bridge/ipc_server.ts";
 import { SessionRegistry } from "../../bridge/registry.ts";
+import type { Logger } from "../../shared/logger.ts";
 
 function createTestApp() {
   const registry = new SessionRegistry();
@@ -15,16 +18,16 @@ function createTestApp() {
       registerSession: vi.fn(async () => ({ sessionId: "hub-2", status: "running" })),
       getConnectionInfo: vi.fn(),
       createLinkToken: vi.fn(),
-    },
+    } as unknown as BackendClient,
     eventSender: {
       pendingEventsCount: () => 0,
       send: vi.fn(),
-    },
+    } as unknown as EventSender,
     logger: {
       info: vi.fn(),
       warn: vi.fn(),
       error: vi.fn(),
-    },
+    } as unknown as Logger,
     ipcPort: 9473,
     getDeviceState: () => ({
       deviceId: "device-1",
