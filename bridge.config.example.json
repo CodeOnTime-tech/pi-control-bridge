@@ -1,0 +1,10 @@
+{
+  "hub_url": "http://127.0.0.1:8000",
+  "poll_interval_sec": 2,
+  "heartbeat_interval_sec": 15,
+  "command_batch_size": 10,
+  "bridge_log_level": "INFO",
+  "bridge_data_dir": "~/.pi/bridge",
+  "ipc_port": 9473,
+  "auto_start_bridge": true
+}

@@ -1,0 +1,246 @@
+import { randomUUID } from "node:crypto";
+
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+
+import {
+  createTelegramLinkToken,
+  getBridgeStatus,
+  postSessionEvent,
+  registerSession,
+  unregisterSession,
+  waitForCommand,
+} from "./bridge_client.ts";
+import { executeCommand } from "./command_handler.ts";
+import { ensureBridge, setBridgeConfigCwd } from "./ensure_bridge.ts";
+
+interface SessionBinding {
+  localId: string;
+  consumerAbort: AbortController;
+}
+
+const sessions = new Map<string, SessionBinding>();
+let degradedNotified = false;
+
+function isEphemeral(ctx: ExtensionContext): boolean {
+  return ctx.sessionManager.getSessionFile() === undefined;
+}
+
+async function postEvent(
+  localId: string,
+  eventType: string,
+  status?: string,
+  payload?: Record<string, unknown>,
+): Promise<void> {
+  if (!sessions.has(localId)) return;
+  try {
+    await postSessionEvent(localId, {
+      eventType,
+      status,
+      payload,
+      eventId: randomUUID(),
+    });
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        level: "WARN",
+        message: "Failed to post bridge event",
+        eventType,
+        error: String(error),
+      }),
+    );
+  }
+}
+
+function startCommandConsumer(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  localId: string,
+  signal: AbortSignal,
+): void {
+  void (async () => {
+    while (!signal.aborted) {
+      try {
+        const command = await waitForCommand(localId);
+        if (signal.aborted) break;
+        if (command) {
+          executeCommand(pi, ctx, command);
+        }
+      } catch (error) {
+        if (signal.aborted) break;
+        console.error(
+          JSON.stringify({
+            level: "WARN",
+            message: "Command consumer error",
+            error: String(error),
+          }),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+  })();
+}
+
+async function handleSessionStart(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
+  if (isEphemeral(ctx)) return;
+
+  setBridgeConfigCwd(ctx.cwd);
+
+  const ready = await ensureBridge();
+  if (!ready) {
+    if (ctx.hasUI && !degradedNotified) {
+      ctx.ui.notify("Telegram/backend integration unavailable (bridge not running)", "warning");
+      degradedNotified = true;
+    }
+    return;
+  }
+
+  try {
+    const status = await getBridgeStatus();
+    if (status.degraded && ctx.hasUI && !degradedNotified) {
+      ctx.ui.notify("Backend connection degraded; events will be queued locally", "warning");
+      degradedNotified = true;
+    }
+  } catch {
+    if (ctx.hasUI && !degradedNotified) {
+      ctx.ui.notify("Bridge unreachable", "warning");
+      degradedNotified = true;
+    }
+  }
+
+  const localId = ctx.sessionManager.getSessionId();
+  const consumerAbort = new AbortController();
+
+  try {
+    await registerSession({
+      localId,
+      externalSessionId: localId,
+      cwd: ctx.cwd,
+      projectPath: ctx.cwd,
+      title: pi.getSessionName(),
+      pid: process.pid,
+      mode: ctx.mode,
+    });
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        level: "ERROR",
+        message: "Session bridge registration failed",
+        error: String(error),
+      }),
+    );
+    return;
+  }
+
+  sessions.set(localId, { localId, consumerAbort });
+  startCommandConsumer(pi, ctx, localId, consumerAbort.signal);
+  await postEvent(localId, "session_start", "running");
+}
+
+async function handleSessionShutdown(ctx: ExtensionContext): Promise<void> {
+  const localId = ctx.sessionManager.getSessionId();
+  const binding = sessions.get(localId);
+  if (!binding) return;
+
+  binding.consumerAbort.abort();
+  sessions.delete(localId);
+  setBridgeConfigCwd(undefined);
+
+  await postEvent(localId, "session_shutdown", "offline");
+  try {
+    await unregisterSession(localId);
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        level: "WARN",
+        message: "Session bridge unregister failed",
+        error: String(error),
+      }),
+    );
+  }
+}
+
+export function registerHooks(pi: ExtensionAPI): void {
+  pi.on("session_start", (_event, ctx) => {
+    void handleSessionStart(pi, ctx).catch((error) => {
+      console.error(
+        JSON.stringify({
+          level: "ERROR",
+          message: "session_start bridge handler failed",
+          error: String(error),
+        }),
+      );
+    });
+  });
+
+  pi.on("session_shutdown", (_event, ctx) => {
+    void handleSessionShutdown(ctx).catch((error) => {
+      console.error(
+        JSON.stringify({
+          level: "ERROR",
+          message: "session_shutdown bridge handler failed",
+          error: String(error),
+        }),
+      );
+    });
+  });
+
+  pi.on("agent_start", (_event, ctx) => {
+    void postEvent(ctx.sessionManager.getSessionId(), "agent_start", "running");
+  });
+
+  pi.on("tool_execution_start", (event, ctx) => {
+    void postEvent(ctx.sessionManager.getSessionId(), "tool_execution_start", "running", {
+      toolName: event.toolName,
+    });
+  });
+
+  pi.on("tool_execution_end", (event, ctx) => {
+    void postEvent(ctx.sessionManager.getSessionId(), "tool_execution_end", "running", {
+      toolName: event.toolName,
+    });
+  });
+
+  pi.on("agent_end", (_event, ctx) => {
+    const status = ctx.isIdle() ? "waiting_user" : "running";
+    void postEvent(ctx.sessionManager.getSessionId(), "agent_end", status);
+  });
+
+  pi.on("turn_end", (_event, ctx) => {
+    if (ctx.isIdle()) {
+      void postEvent(ctx.sessionManager.getSessionId(), "session_idle", "waiting_user");
+    }
+  });
+
+  pi.registerCommand("bridge:status", {
+    description: "Show pi-control-bridge status",
+    handler: async (_args, ctx) => {
+      try {
+        const status = await getBridgeStatus();
+        const message = [
+          `device: ${status.deviceId ?? "n/a"}`,
+          `sessions: ${status.activeSessions}`,
+          `backend: ${status.backendConnected ? "ok" : "degraded"}`,
+          `pending events: ${status.pendingEvents}`,
+        ].join("\n");
+        if (ctx.hasUI) ctx.ui.notify(message, "info");
+        else console.error(message);
+      } catch (error) {
+        if (ctx.hasUI) ctx.ui.notify(`Bridge status error: ${String(error)}`, "error");
+      }
+    },
+  });
+
+  pi.registerCommand("bridge:link-telegram", {
+    description: "Create Telegram link token for this device",
+    handler: async (_args, ctx) => {
+      try {
+        const { token } = await createTelegramLinkToken();
+        const message = `Telegram link token: ${token}\nUse /start ${token} in the bot.`;
+        if (ctx.hasUI) ctx.ui.notify(message, "info");
+        else console.error(message);
+      } catch (error) {
+        if (ctx.hasUI) ctx.ui.notify(`Link token error: ${String(error)}`, "error");
+      }
+    },
+  });
+}

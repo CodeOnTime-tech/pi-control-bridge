@@ -1,0 +1,133 @@
+import { Hono } from "hono";
+import { serve } from "@hono/node-server";
+
+import { IPC_COMMAND_WAIT_TIMEOUT_MS } from "../shared/constants.ts";
+import type { Logger } from "../shared/logger.ts";
+import type {
+  BridgeStatus,
+  DeviceState,
+  RegisterSessionRequest,
+  SessionEventPayload,
+} from "../shared/types.ts";
+import type { BackendClient } from "./backend_client.ts";
+import type { EventSender } from "./event_sender.ts";
+import type { SessionRegistry } from "./registry.ts";
+
+export interface IpcServerDeps {
+  registry: SessionRegistry;
+  backend: BackendClient;
+  eventSender: EventSender;
+  logger: Logger;
+  ipcPort: number;
+  getDeviceState: () => DeviceState | null;
+  onEmptyRegistry?: () => void;
+}
+
+export function createIpcApp(deps: IpcServerDeps): Hono {
+  const app = new Hono();
+
+  app.get("/health", (c) => {
+    const state = deps.getDeviceState();
+    const status: BridgeStatus = {
+      ok: true,
+      deviceId: state?.deviceId,
+      backendConnected: !deps.backend.isDegraded(),
+      degraded: deps.backend.isDegraded(),
+      activeSessions: deps.registry.size(),
+      pendingEvents: deps.eventSender.pendingEventsCount(),
+      ipcPort: deps.ipcPort,
+    };
+    return c.json({ ...status, version: "0.1.0" });
+  });
+
+  app.get("/sessions", (c) => c.json({ items: deps.registry.list() }));
+
+  app.post("/sessions/register", async (c) => {
+    const body = (await c.req.json()) as RegisterSessionRequest;
+    const state = deps.getDeviceState();
+    if (!state) {
+      return c.json({ error: "Device not registered" }, 503);
+    }
+
+    try {
+      const result = await deps.backend.registerSession(state.deviceToken, {
+        external_session_id: body.externalSessionId,
+        title: body.title,
+        project_path: body.projectPath,
+        cwd: body.cwd,
+        status: "running",
+      });
+
+      const record = {
+        localId: body.localId,
+        externalSessionId: body.externalSessionId,
+        hubSessionId: result.sessionId,
+        cwd: body.cwd,
+        projectPath: body.projectPath,
+        title: body.title,
+        pid: body.pid,
+        mode: body.mode,
+        registeredAt: new Date().toISOString(),
+      };
+      deps.registry.register(record);
+      deps.logger.info("Session registered", {
+        deviceId: state.deviceId,
+        externalSessionId: body.externalSessionId,
+        hubSessionId: record.hubSessionId,
+      });
+      return c.json({ hubSessionId: record.hubSessionId, status: result.status });
+    } catch (error) {
+      deps.logger.error("Session register failed", { error: String(error) });
+      return c.json({ error: String(error) }, 502);
+    }
+  });
+
+  app.delete("/sessions/:localId", (c) => {
+    const localId = c.req.param("localId");
+    deps.registry.unregister(localId);
+    deps.logger.info("Session unregistered", { externalSessionId: localId });
+    if (deps.registry.size() === 0) {
+      deps.onEmptyRegistry?.();
+    }
+    return c.json({ ok: true });
+  });
+
+  app.post("/sessions/:localId/events", async (c) => {
+    const localId = c.req.param("localId");
+    const session = deps.registry.getByLocalId(localId);
+    if (!session) {
+      return c.json({ error: "Session not found" }, 404);
+    }
+    const event = (await c.req.json()) as SessionEventPayload;
+    await deps.eventSender.send(session.externalSessionId, event);
+    return c.json({ ok: true });
+  });
+
+  app.get("/sessions/:localId/commands/wait", async (c) => {
+    const localId = c.req.param("localId");
+    const command = await deps.registry.waitForCommand(
+      localId,
+      IPC_COMMAND_WAIT_TIMEOUT_MS,
+    );
+    if (!command) {
+      return c.body(null, 204);
+    }
+    return c.json(command);
+  });
+
+  return app;
+}
+
+export function startIpcServer(deps: IpcServerDeps): { close: () => void } {
+  const app = createIpcApp(deps);
+  const listener = serve({
+    fetch: app.fetch,
+    hostname: "127.0.0.1",
+    port: deps.ipcPort,
+  });
+
+  deps.logger.info("IPC server listening", { ipcPort: deps.ipcPort });
+  return {
+    close: () => listener.close(),
+  };
+}
