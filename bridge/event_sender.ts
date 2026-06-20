@@ -23,6 +23,14 @@ export class EventSender {
       this.logger.warn("Cannot send event without device state", { eventId: event.eventId });
       return;
     }
+    const telegramLinked = await this.backend.isTelegramLinked(state.deviceToken);
+    if (!telegramLinked) {
+      this.logger.debug("Skip session event: telegram not linked", {
+        externalSessionId,
+        eventId: event.eventId,
+      });
+      return;
+    }
 
     try {
       await this.backend.postSessionEvent(state.deviceToken, {
@@ -56,6 +64,8 @@ export class EventSender {
   async flushRetryQueue(): Promise<void> {
     const state = this.getDeviceState();
     if (!state) return;
+    const telegramLinked = await this.backend.isTelegramLinked(state.deviceToken);
+    if (!telegramLinked) return;
 
     const queued = this.retryQueue.load();
     if (queued.length === 0) return;

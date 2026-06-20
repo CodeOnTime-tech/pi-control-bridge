@@ -45,6 +45,7 @@ function mapSessionRegister(raw: Record<string, unknown>): SessionRegisterResult
 export class BackendClient {
   private degraded = false;
   private lastCorrelationId?: string;
+  private telegramLinkedCache: { value: boolean; checkedAt: number } | null = null;
 
   constructor(
     private readonly config: BridgeConfig,
@@ -129,6 +130,23 @@ export class BackendClient {
       query: { device_token: deviceToken },
     });
     return parseHubConnectionInfo(raw);
+  }
+
+  async isTelegramLinked(deviceToken: string, maxAgeMs = 30_000): Promise<boolean> {
+    const now = Date.now();
+    if (this.telegramLinkedCache && now - this.telegramLinkedCache.checkedAt < maxAgeMs) {
+      return this.telegramLinkedCache.value;
+    }
+
+    try {
+      const info = await this.getConnectionInfo(deviceToken);
+      const linked = info.telegram.linked === true;
+      this.telegramLinkedCache = { value: linked, checkedAt: now };
+      return linked;
+    } catch {
+      // If backend status is temporarily unavailable, keep bridge loops working.
+      return true;
+    }
   }
 
   async heartbeat(deviceToken: string): Promise<void> {

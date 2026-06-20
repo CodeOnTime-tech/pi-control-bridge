@@ -46,6 +46,7 @@ describe("bridge loops", () => {
   it("skips heartbeat when there are no active sessions", async () => {
     const backend = {
       heartbeat: vi.fn().mockResolvedValue(undefined),
+      isTelegramLinked: vi.fn().mockResolvedValue(true),
     } as unknown as BackendClient;
 
     const stop = startHeartbeatLoop(
@@ -66,6 +67,7 @@ describe("bridge loops", () => {
   it("sends heartbeat when sessions are active", async () => {
     const backend = {
       heartbeat: vi.fn().mockResolvedValue(undefined),
+      isTelegramLinked: vi.fn().mockResolvedValue(true),
     } as unknown as BackendClient;
 
     const stop = startHeartbeatLoop(
@@ -79,6 +81,27 @@ describe("bridge loops", () => {
 
     await vi.runOnlyPendingTimersAsync();
     expect(backend.heartbeat).toHaveBeenCalledWith("token-1");
+
+    stop();
+  });
+
+  it("skips heartbeat when telegram is not linked", async () => {
+    const backend = {
+      heartbeat: vi.fn().mockResolvedValue(undefined),
+      isTelegramLinked: vi.fn().mockResolvedValue(false),
+    } as unknown as BackendClient;
+
+    const stop = startHeartbeatLoop(
+      config,
+      backend,
+      logger,
+      () => deviceState,
+      vi.fn(),
+      () => true,
+    );
+
+    await vi.runOnlyPendingTimersAsync();
+    expect(backend.heartbeat).not.toHaveBeenCalled();
 
     stop();
   });

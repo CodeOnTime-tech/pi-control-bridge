@@ -19,6 +19,8 @@ export function startHeartbeatLoop(
     if (!hasActiveSessions()) return;
     const state = getDeviceState();
     if (!state) return;
+    const telegramLinked = await backend.isTelegramLinked(state.deviceToken);
+    if (!telegramLinked) return;
     try {
       await backend.heartbeat(state.deviceToken);
       onHeartbeat({
