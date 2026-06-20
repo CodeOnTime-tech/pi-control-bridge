@@ -57,6 +57,8 @@ export function startPollerLoop(
     if (stopped) return;
     const state = getDeviceState();
     if (!state) return;
+    const telegramLinked = await backend.isTelegramLinked(state.deviceToken);
+    if (!telegramLinked) return;
 
     const active = hasActiveSessions();
     const hasPendingEvents = eventSender.pendingEventsCount() > 0;
