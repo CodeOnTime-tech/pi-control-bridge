@@ -1,0 +1,54 @@
+import { describe, expect, it, vi } from "vitest";
+
+import { createIpcApp } from "../../bridge/ipc_server.ts";
+import { SessionRegistry } from "../../bridge/registry.ts";
+import type { EventSender } from "../../bridge/event_sender.ts";
+import type { BackendClient } from "../../bridge/backend_client.ts";
+import { Logger } from "../../shared/logger.ts";
+
+function createDeps(registry: SessionRegistry, eventSender: EventSender) {
+  const logger = new Logger("ERROR");
+
+  return {
+    registry,
+    backend: { isDegraded: () => false } as BackendClient,
+    eventSender,
+    logger,
+    ipcPort: 9473,
+    getDeviceState: () => null,
+  };
+}
+
+describe("createIpcApp", () => {
+  it("notifies backend on session unregister", async () => {
+    const registry = new SessionRegistry();
+    registry.register({
+      localId: "local-1",
+      externalSessionId: "ext-1",
+      hubSessionId: "hub-1",
+      cwd: "/tmp",
+      pid: 1,
+      mode: "tui",
+      registeredAt: new Date().toISOString(),
+    });
+
+    const send = vi.fn().mockResolvedValue(undefined);
+    const eventSender = { send, pendingEventsCount: () => 0 } as unknown as EventSender;
+    const app = createIpcApp(createDeps(registry, eventSender));
+
+    const response = await app.request("http://127.0.0.1/sessions/local-1", {
+      method: "DELETE",
+    });
+
+    expect(response.status).toBe(200);
+    expect(send).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenCalledWith(
+      "ext-1",
+      expect.objectContaining({
+        eventType: "session_shutdown",
+        status: "offline",
+      }),
+    );
+    expect(registry.size()).toBe(0);
+  });
+});

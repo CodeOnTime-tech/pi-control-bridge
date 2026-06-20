@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 
@@ -145,8 +147,18 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
     return c.json({ ok: true, activeSessions: deps.registry.size() });
   });
 
-  app.delete("/sessions/:localId", (c) => {
+  app.delete("/sessions/:localId", async (c) => {
     const localId = c.req.param("localId");
+    const session = deps.registry.getByLocalId(localId);
+    if (!session) {
+      return c.json({ ok: true });
+    }
+
+    await deps.eventSender.send(session.externalSessionId, {
+      eventType: "session_shutdown",
+      status: "offline",
+      eventId: randomUUID(),
+    });
     deps.registry.unregister(localId);
     deps.logger.info("Session unregistered", { externalSessionId: localId });
     if (deps.registry.size() === 0) {

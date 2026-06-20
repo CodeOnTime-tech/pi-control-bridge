@@ -145,7 +145,6 @@ async function handleSessionShutdown(ctx: ExtensionContext): Promise<void> {
 
   if (binding) {
     binding.consumerAbort.abort();
-    await postEvent(localId, "session_shutdown", "offline");
     sessions.delete(localId);
 
     try {
@@ -178,8 +177,8 @@ async function handleSessionShutdown(ctx: ExtensionContext): Promise<void> {
 }
 
 export function registerHooks(pi: ExtensionAPI): void {
-  pi.on("session_start", (_event, ctx) => {
-    void handleSessionStart(pi, ctx).catch((error) => {
+  pi.on("session_start", (_event, ctx) =>
+    handleSessionStart(pi, ctx).catch((error) => {
       console.error(
         JSON.stringify({
           level: "ERROR",
@@ -187,11 +186,11 @@ export function registerHooks(pi: ExtensionAPI): void {
           error: String(error),
         }),
       );
-    });
-  });
+    }),
+  );
 
-  pi.on("session_shutdown", (_event, ctx) => {
-    void handleSessionShutdown(ctx).catch((error) => {
+  pi.on("session_shutdown", (_event, ctx) =>
+    handleSessionShutdown(ctx).catch((error) => {
       console.error(
         JSON.stringify({
           level: "ERROR",
@@ -199,8 +198,8 @@ export function registerHooks(pi: ExtensionAPI): void {
           error: String(error),
         }),
       );
-    });
-  });
+    }),
+  );
 
   pi.on("agent_start", (_event, ctx) => {
     void postEvent(ctx.sessionManager.getSessionId(), "agent_start", "running");
