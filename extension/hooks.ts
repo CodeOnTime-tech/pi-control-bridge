@@ -16,6 +16,7 @@ import { executeCommand } from "./command_handler.ts";
 import { ensureBridge, setBridgeConfigCwd } from "./ensure_bridge.ts";
 import { formatConnectTelegramMessage, formatControlStatusMessage } from "./messages.ts";
 import { buildSessionMetadata } from "./session_metadata.ts";
+import { sessionStatusFromContext } from "./session_status.ts";
 
 interface SessionBinding {
   localId: string;
@@ -124,6 +125,7 @@ async function handleSessionStart(pi: ExtensionAPI, ctx: ExtensionContext): Prom
 
   const localId = ctx.sessionManager.getSessionId();
   const consumerAbort = new AbortController();
+  const status = sessionStatusFromContext(ctx);
 
   try {
     await registerSession({
@@ -134,6 +136,7 @@ async function handleSessionStart(pi: ExtensionAPI, ctx: ExtensionContext): Prom
       title: pi.getSessionName(),
       pid: process.pid,
       mode: ctx.mode,
+      status,
     });
   } catch (error) {
     console.error(
@@ -148,7 +151,7 @@ async function handleSessionStart(pi: ExtensionAPI, ctx: ExtensionContext): Prom
 
   sessions.set(localId, { localId, consumerAbort });
   startCommandConsumer(pi, ctx, localId, consumerAbort.signal);
-  await postEvent(localId, "session_start", "running");
+  await postEvent(localId, "session_start", status);
   await postSessionMetadata(pi, ctx, localId);
 }
 
@@ -232,7 +235,7 @@ export function registerHooks(pi: ExtensionAPI): void {
 
   pi.on("agent_end", (event, ctx) => {
     const localId = ctx.sessionManager.getSessionId();
-    const status = ctx.isIdle() ? "waiting_user" : "running";
+    const status = sessionStatusFromContext(ctx);
     void postEvent(localId, "agent_end", status);
     void postSessionMetadata(pi, ctx, localId, { messages: event.messages });
   });

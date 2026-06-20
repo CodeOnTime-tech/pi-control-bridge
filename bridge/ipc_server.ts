@@ -109,7 +109,7 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
         title: body.title,
         project_path: body.projectPath,
         cwd: body.cwd,
-        status: "running",
+        status: body.status ?? "running",
       });
 
       const record = {

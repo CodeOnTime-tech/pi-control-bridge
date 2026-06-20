@@ -75,6 +75,7 @@ export interface RegisterSessionRequest {
   title?: string;
   pid: number;
   mode: string;
+  status?: string;
 }
 
 export interface RegisterSessionResponse {
