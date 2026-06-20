@@ -1,4 +1,4 @@
-export const PACKAGE_VERSION = "0.3.0";
+export const PACKAGE_VERSION = "0.3.1";
 
 export const DEFAULT_HUB_URL = "http://127.0.0.1:8000";
 export const DEFAULT_POLL_INTERVAL_SEC = 2;
