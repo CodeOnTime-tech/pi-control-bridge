@@ -24,6 +24,7 @@ export interface IpcServerDeps {
   onEmptyRegistry?: () => void;
   onSessionRegistered?: () => void;
   scheduleShutdownIfIdle?: () => boolean;
+  onShutdown?: () => void;
 }
 
 export function createIpcApp(deps: IpcServerDeps): Hono {
@@ -137,6 +138,11 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
   app.post("/shutdown-if-idle", (c) => {
     const scheduled = deps.scheduleShutdownIfIdle?.() ?? false;
     return c.json({ scheduled, activeSessions: deps.registry.size() });
+  });
+
+  app.post("/shutdown", (c) => {
+    deps.onShutdown?.();
+    return c.json({ ok: true, activeSessions: deps.registry.size() });
   });
 
   app.delete("/sessions/:localId", (c) => {

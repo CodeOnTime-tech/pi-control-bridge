@@ -6,7 +6,7 @@ import { createIpcApp } from "../../bridge/ipc_server.ts";
 import { SessionRegistry } from "../../bridge/registry.ts";
 import type { Logger } from "../../shared/logger.ts";
 
-function createTestApp() {
+function createTestApp(options: { onShutdown?: () => void } = {}) {
   const registry = new SessionRegistry();
   let shutdownScheduled = false;
   let shutdownCancelled = false;
@@ -46,6 +46,7 @@ function createTestApp() {
       shutdownScheduled = true;
       return true;
     },
+    onShutdown: options.onShutdown,
   });
 
   return { app, registry, getShutdownScheduled: () => shutdownScheduled, getShutdownCancelled: () => shutdownCancelled };
@@ -95,5 +96,15 @@ describe("IPC shutdown-if-idle", () => {
 
     expect(register.status).toBe(200);
     expect(getShutdownCancelled()).toBe(true);
+  });
+
+  it("invokes shutdown handler on POST /shutdown", async () => {
+    let shutdownRequested = false;
+    const { app } = createTestApp({ onShutdown: () => { shutdownRequested = true; } });
+
+    const response = await app.request("/shutdown", { method: "POST" });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, activeSessions: 0 });
+    expect(shutdownRequested).toBe(true);
   });
 });

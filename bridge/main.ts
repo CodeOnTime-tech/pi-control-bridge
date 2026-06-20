@@ -1,4 +1,4 @@
-import { loadBridgeConfig } from "../shared/config.ts";
+import { ipcBaseUrl, loadBridgeConfig } from "../shared/config.ts";
 import { Logger } from "../shared/logger.ts";
 import type { DeviceState } from "../shared/types.ts";
 import { BackendClient } from "./backend_client.ts";
@@ -52,8 +52,17 @@ export class BridgeRuntime {
       onEmptyRegistry: () => this.scheduleShutdownIfIdle(),
       onSessionRegistered: () => this.cancelScheduledShutdown(),
       scheduleShutdownIfIdle: () => this.scheduleShutdownIfIdle(),
+      onShutdown: () => {
+        setImmediate(() => {
+          this.logger.info("Shutdown requested");
+          this.stop();
+          process.exit(0);
+        });
+      },
     });
     this.ipcClose = ipc.close;
+
+    const hasActiveSessions = () => this.registry.size() > 0;
 
     this.stopHeartbeat = startHeartbeatLoop(
       this.config,
@@ -64,6 +73,7 @@ export class BridgeRuntime {
         this.deviceState = state;
         this.stateStore.save(state);
       },
+      hasActiveSessions,
     );
 
     this.stopPoller = startPollerLoop(
@@ -73,6 +83,7 @@ export class BridgeRuntime {
       eventSender,
       this.logger,
       () => this.deviceState,
+      hasActiveSessions,
     );
 
     this.logger.info("Bridge runtime started", {
@@ -128,8 +139,29 @@ export class BridgeRuntime {
   }
 }
 
+async function stopBridge(): Promise<void> {
+  const config = loadBridgeConfig();
+  try {
+    const response = await fetch(`${ipcBaseUrl(config.ipcPort)}/shutdown`, {
+      method: "POST",
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!response.ok) {
+      console.error(`Bridge shutdown failed: HTTP ${response.status}`);
+      process.exit(1);
+    }
+    console.log("Bridge stopped");
+  } catch {
+    console.log("Bridge is not running");
+  }
+}
+
 async function main(): Promise<void> {
   const command = process.argv[2] ?? "start";
+  if (command === "stop") {
+    await stopBridge();
+    return;
+  }
   if (command !== "start") {
     console.error(`Unknown command: ${command}`);
     process.exit(1);

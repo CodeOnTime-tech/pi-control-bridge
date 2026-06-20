@@ -2,7 +2,7 @@ BASEDIR := $(CURDIR)
 SHELL := /bin/bash
 NPM ?= npm
 
-.PHONY: help install build test check publish release
+.PHONY: help install build test check publish release bridge-stop
 
 help: 
 	@echo "Usage: make <target>"
@@ -20,6 +20,9 @@ test:
 
 check: 
 	$(NPM) run check
+
+stop: build
+	node dist/bridge/main.js stop
 
 publish: build 
 	$(NPM) publish

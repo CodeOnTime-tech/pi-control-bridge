@@ -10,11 +10,13 @@ export function startHeartbeatLoop(
   logger: Logger,
   getDeviceState: () => DeviceState | null,
   onHeartbeat: (state: DeviceState) => void,
+  hasActiveSessions: () => boolean,
 ): () => void {
   let stopped = false;
 
   const tick = async (): Promise<void> => {
     if (stopped) return;
+    if (!hasActiveSessions()) return;
     const state = getDeviceState();
     if (!state) return;
     try {
@@ -45,6 +47,7 @@ export function startPollerLoop(
   eventSender: EventSender,
   logger: Logger,
   getDeviceState: () => DeviceState | null,
+  hasActiveSessions: () => boolean,
 ): () => void {
   let stopped = false;
 
@@ -53,8 +56,16 @@ export function startPollerLoop(
     const state = getDeviceState();
     if (!state) return;
 
+    const active = hasActiveSessions();
+    const hasPendingEvents = eventSender.pendingEventsCount() > 0;
+    if (!active && !hasPendingEvents) return;
+
     try {
-      await eventSender.flushRetryQueue();
+      if (hasPendingEvents) {
+        await eventSender.flushRetryQueue();
+      }
+      if (!active) return;
+
       const commands = await backend.getNextCommands(state.deviceId, state.deviceToken);
       for (const command of commands) {
         await dispatcher.dispatch(command);
