@@ -15,6 +15,7 @@ function createTestApp(options: { onShutdown?: () => void } = {}) {
     registry,
     backend: {
       isDegraded: () => false,
+      isTelegramLinked: vi.fn().mockResolvedValue(true),
       registerSession: vi.fn(async () => ({ sessionId: "hub-2", status: "running" })),
       getConnectionInfo: vi.fn(),
       createLinkToken: vi.fn(),
@@ -35,6 +36,13 @@ function createTestApp(options: { onShutdown?: () => void } = {}) {
       fingerprint: "fp-1",
       hubUrl: "http://127.0.0.1:8000",
     }),
+    ensureHubDeviceRegistered: vi.fn(async () => ({
+      deviceId: "device-1",
+      deviceToken: "token-1",
+      fingerprint: "fp-1",
+      hubUrl: "http://127.0.0.1:8000",
+    })),
+    syncPendingSessions: vi.fn(async () => undefined),
     onEmptyRegistry: () => {
       shutdownScheduled = true;
     },

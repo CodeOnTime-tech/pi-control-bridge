@@ -11,10 +11,27 @@ export class SessionRegistry {
 
   register(session: LocalSessionRecord): void {
     this.sessions.set(session.localId, session);
-    this.hubToLocal.set(session.hubSessionId, session.localId);
+    if (!session.hubPending) {
+      this.hubToLocal.set(session.hubSessionId, session.localId);
+    }
     if (!this.commandQueues.has(session.localId)) {
       this.commandQueues.set(session.localId, []);
     }
+  }
+
+  markHubSynced(localId: string, hubSessionId: string): void {
+    const session = this.sessions.get(localId);
+    if (!session) return;
+    if (!session.hubPending) {
+      this.hubToLocal.delete(session.hubSessionId);
+    }
+    session.hubSessionId = hubSessionId;
+    session.hubPending = false;
+    this.hubToLocal.set(hubSessionId, localId);
+  }
+
+  listPendingHubSync(): LocalSessionRecord[] {
+    return this.list().filter((session) => session.hubPending);
   }
 
   unregister(localId: string): void {

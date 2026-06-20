@@ -50,14 +50,20 @@ export function startPollerLoop(
   logger: Logger,
   getDeviceState: () => DeviceState | null,
   hasActiveSessions: () => boolean,
+  onTelegramLinked?: () => Promise<void>,
 ): () => void {
   let stopped = false;
+  let previousLinked = false;
 
   const tick = async (): Promise<void> => {
     if (stopped) return;
     const state = getDeviceState();
     if (!state) return;
     const telegramLinked = await backend.isTelegramLinked(state.deviceToken);
+    if (telegramLinked && !previousLinked) {
+      await onTelegramLinked?.();
+    }
+    previousLinked = telegramLinked;
     if (!telegramLinked) return;
 
     const active = hasActiveSessions();

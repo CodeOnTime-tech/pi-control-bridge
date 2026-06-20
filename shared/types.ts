@@ -40,6 +40,7 @@ export interface LocalSessionRecord {
   pid: number;
   mode: string;
   registeredAt: string;
+  hubPending?: boolean;
 }
 
 export interface PendingCommand {

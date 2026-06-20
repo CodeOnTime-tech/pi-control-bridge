@@ -11,11 +11,16 @@ function createDeps(registry: SessionRegistry, eventSender: EventSender) {
 
   return {
     registry,
-    backend: { isDegraded: () => false } as BackendClient,
+    backend: {
+      isDegraded: () => false,
+      isTelegramLinked: vi.fn().mockResolvedValue(true),
+    } as unknown as BackendClient,
     eventSender,
     logger,
     ipcPort: 9473,
     getDeviceState: () => null,
+    ensureHubDeviceRegistered: vi.fn(),
+    syncPendingSessions: vi.fn(),
   };
 }
 
@@ -50,5 +55,31 @@ describe("createIpcApp", () => {
       }),
     );
     expect(registry.size()).toBe(0);
+  });
+
+  it("registers session locally when telegram is not linked", async () => {
+    const registry = new SessionRegistry();
+    const eventSender = { send: vi.fn(), pendingEventsCount: () => 0 } as unknown as EventSender;
+    const deps = createDeps(registry, eventSender);
+    deps.backend.isTelegramLinked = vi.fn().mockResolvedValue(false);
+    const app = createIpcApp(deps);
+
+    const response = await app.request("http://127.0.0.1/sessions/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        localId: "local-1",
+        externalSessionId: "ext-1",
+        cwd: "/tmp",
+        pid: 1,
+        mode: "tui",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { hubSessionId: string; status: string };
+    expect(body.status).toBe("pending");
+    expect(registry.listPendingHubSync()).toHaveLength(1);
+    expect(deps.ensureHubDeviceRegistered).not.toHaveBeenCalled();
   });
 });

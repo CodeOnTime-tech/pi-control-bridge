@@ -26,7 +26,7 @@ export class BridgeRuntime {
   private readonly backend = new BackendClient(this.config, this.logger);
 
   async start(): Promise<void> {
-    await this.ensureDeviceRegistered();
+    await this.initOnStart();
 
     const eventSender = new EventSender(
       this.backend,
@@ -49,6 +49,8 @@ export class BridgeRuntime {
       logger: this.logger,
       ipcPort: this.config.ipcPort,
       getDeviceState: () => this.deviceState,
+      ensureHubDeviceRegistered: () => this.ensureHubDeviceRegistered(),
+      syncPendingSessions: () => this.syncPendingSessions(),
       onEmptyRegistry: () => this.scheduleShutdownIfIdle(),
       onSessionRegistered: () => this.cancelScheduledShutdown(),
       scheduleShutdownIfIdle: () => this.scheduleShutdownIfIdle(),
@@ -84,6 +86,10 @@ export class BridgeRuntime {
       this.logger,
       () => this.deviceState,
       hasActiveSessions,
+      async () => {
+        await this.ensureHubDeviceRegistered();
+        await this.syncPendingSessions();
+      },
     );
 
     this.logger.info("Bridge runtime started", {
@@ -92,15 +98,41 @@ export class BridgeRuntime {
     });
   }
 
-  private async ensureDeviceRegistered(): Promise<void> {
+  private async initOnStart(): Promise<void> {
+    const saved = this.stateStore.load();
+    if (!saved?.deviceToken) {
+      this.deviceState = null;
+      this.logger.info("Bridge started idle: hub registration deferred until Telegram is linked");
+      return;
+    }
+
+    const fingerprint = computeDeviceFingerprint();
+    this.deviceState = {
+      ...saved,
+      fingerprint,
+      hubUrl: this.config.hubUrl,
+    };
+
+    const linked = await this.backend.isTelegramLinked(saved.deviceToken);
+    if (!linked) {
+      this.logger.info("Telegram not linked — deferring hub device/session sync");
+      return;
+    }
+
+    await this.ensureHubDeviceRegistered();
+    await this.syncPendingSessions();
+  }
+
+  async ensureHubDeviceRegistered(): Promise<DeviceState> {
     const fingerprint = computeDeviceFingerprint();
     const saved = this.stateStore.load();
-    let result;
+    const existingToken = this.deviceState?.deviceToken ?? saved?.deviceToken;
 
-    if (saved?.deviceToken) {
+    let result;
+    if (existingToken) {
       try {
-        await this.backend.validateToken(saved.deviceToken);
-        result = await this.backend.registerDevice(fingerprint, saved.deviceToken);
+        await this.backend.validateToken(existingToken);
+        result = await this.backend.registerDevice(fingerprint, existingToken);
       } catch {
         result = await this.backend.registerDevice(fingerprint);
       }
@@ -108,9 +140,41 @@ export class BridgeRuntime {
       result = await this.backend.registerDevice(fingerprint);
     }
 
-    this.deviceState = this.backend.toDeviceState(result, fingerprint, saved ?? undefined);
+    this.deviceState = this.backend.toDeviceState(result, fingerprint, this.deviceState ?? saved ?? undefined);
     this.stateStore.save(this.deviceState);
-    this.logger.info("Device registered", { deviceId: this.deviceState.deviceId });
+    this.backend.invalidateTelegramLinkedCache();
+    this.logger.info("Device registered on hub", { deviceId: this.deviceState.deviceId });
+    return this.deviceState;
+  }
+
+  async syncPendingSessions(): Promise<void> {
+    const state = this.deviceState;
+    if (!state) return;
+
+    const linked = await this.backend.isTelegramLinked(state.deviceToken);
+    if (!linked) return;
+
+    for (const session of this.registry.listPendingHubSync()) {
+      try {
+        const result = await this.backend.registerSession(state.deviceToken, {
+          external_session_id: session.externalSessionId,
+          title: session.title,
+          project_path: session.projectPath,
+          cwd: session.cwd,
+          status: "running",
+        });
+        this.registry.markHubSynced(session.localId, result.sessionId);
+        this.logger.info("Pending session synced to hub", {
+          localId: session.localId,
+          hubSessionId: result.sessionId,
+        });
+      } catch (error) {
+        this.logger.warn("Pending session sync failed", {
+          localId: session.localId,
+          error: String(error),
+        });
+      }
+    }
   }
 
   scheduleShutdownIfIdle(): boolean {

@@ -23,6 +23,8 @@ export interface IpcServerDeps {
   logger: Logger;
   ipcPort: number;
   getDeviceState: () => DeviceState | null;
+  ensureHubDeviceRegistered: () => Promise<DeviceState>;
+  syncPendingSessions: () => Promise<void>;
   onEmptyRegistry?: () => void;
   onSessionRegistered?: () => void;
   scheduleShutdownIfIdle?: () => boolean;
@@ -65,6 +67,16 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
       return c.json(base);
     }
 
+    const linked = await deps.backend.isTelegramLinked(state.deviceToken);
+    if (!linked) {
+      return c.json({
+        ...base,
+        deviceId: state.deviceId ?? base.deviceId,
+        telegram: { linked: false },
+        bot: {},
+      } satisfies ControlStatus);
+    }
+
     try {
       const connection = await deps.backend.getConnectionInfo(state.deviceToken);
       return c.json({
@@ -80,12 +92,8 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
   });
 
   app.post("/telegram/link-token", async (c) => {
-    const state = deps.getDeviceState();
-    if (!state) {
-      return c.json({ error: "Device not registered" }, 503);
-    }
-
     try {
+      const state = await deps.ensureHubDeviceRegistered();
       const result = await deps.backend.createLinkToken(state.deviceToken);
       return c.json(result);
     } catch (error) {
@@ -99,12 +107,32 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
   app.post("/sessions/register", async (c) => {
     const body = (await c.req.json()) as RegisterSessionRequest;
     const state = deps.getDeviceState();
-    if (!state) {
-      return c.json({ error: "Device not registered" }, 503);
+    const linked = state ? await deps.backend.isTelegramLinked(state.deviceToken) : false;
+
+    if (!linked) {
+      const record = {
+        localId: body.localId,
+        externalSessionId: body.externalSessionId,
+        hubSessionId: body.localId,
+        cwd: body.cwd,
+        projectPath: body.projectPath,
+        title: body.title,
+        pid: body.pid,
+        mode: body.mode,
+        registeredAt: new Date().toISOString(),
+        hubPending: true,
+      };
+      deps.registry.register(record);
+      deps.onSessionRegistered?.();
+      deps.logger.info("Session registered locally (hub sync deferred)", {
+        externalSessionId: body.externalSessionId,
+      });
+      return c.json({ hubSessionId: record.localId, status: "pending" });
     }
 
     try {
-      const result = await deps.backend.registerSession(state.deviceToken, {
+      const hubState = await deps.ensureHubDeviceRegistered();
+      const result = await deps.backend.registerSession(hubState.deviceToken, {
         external_session_id: body.externalSessionId,
         title: body.title,
         project_path: body.projectPath,
@@ -126,7 +154,7 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
       deps.registry.register(record);
       deps.onSessionRegistered?.();
       deps.logger.info("Session registered", {
-        deviceId: state.deviceId,
+        deviceId: hubState.deviceId,
         externalSessionId: body.externalSessionId,
         hubSessionId: record.hubSessionId,
       });

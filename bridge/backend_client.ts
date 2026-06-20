@@ -132,7 +132,15 @@ export class BackendClient {
     return parseHubConnectionInfo(raw);
   }
 
-  async isTelegramLinked(deviceToken: string, maxAgeMs = 30_000): Promise<boolean> {
+  invalidateTelegramLinkedCache(): void {
+    this.telegramLinkedCache = null;
+  }
+
+  async isTelegramLinked(deviceToken: string | undefined, maxAgeMs = 30_000): Promise<boolean> {
+    if (!deviceToken) {
+      return false;
+    }
+
     const now = Date.now();
     if (this.telegramLinkedCache && now - this.telegramLinkedCache.checkedAt < maxAgeMs) {
       return this.telegramLinkedCache.value;
@@ -144,8 +152,8 @@ export class BackendClient {
       this.telegramLinkedCache = { value: linked, checkedAt: now };
       return linked;
     } catch {
-      // If backend status is temporarily unavailable, keep bridge loops working.
-      return true;
+      this.telegramLinkedCache = { value: false, checkedAt: now };
+      return false;
     }
   }
 
