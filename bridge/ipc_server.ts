@@ -258,7 +258,7 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
     if (event.status) {
       deps.registry.updateStatus(localId, event.status);
     }
-    if (session.hubPending) {
+    if (session.hubPending || session.hubSessionId === session.localId) {
       await deps.eventSender.enqueue(session.externalSessionId, event);
       return c.json({ ok: true });
     }
@@ -268,6 +268,9 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
 
   app.get("/sessions/:localId/commands/wait", async (c) => {
     const localId = c.req.param("localId");
+    if (!deps.registry.getByLocalId(localId)) {
+      return c.json({ error: "Session not found" }, 404);
+    }
     const command = await deps.registry.waitForCommand(
       localId,
       IPC_COMMAND_WAIT_TIMEOUT_MS,

@@ -170,4 +170,14 @@ describe("createIpcApp", () => {
     expect(createLinkToken).not.toHaveBeenCalled();
     expect(markTelegramLinked).toHaveBeenCalledWith(true);
   });
+
+  it("returns 404 for command wait on unknown session", async () => {
+    const registry = new SessionRegistry();
+    const eventSender = { send: vi.fn(), enqueue: vi.fn(), pendingEventsCount: () => 0 } as unknown as EventSender;
+    const app = createIpcApp(createDeps(registry, eventSender));
+
+    const response = await app.request("http://127.0.0.1/sessions/missing/commands/wait");
+
+    expect(response.status).toBe(404);
+  });
 });

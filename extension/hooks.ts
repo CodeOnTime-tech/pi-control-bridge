@@ -6,6 +6,7 @@ import {
   createTelegramLinkToken,
   getBridgeStatus,
   getControlStatus,
+  listBridgeSessions,
   postSessionEvent,
   registerSession,
   requestBridgeShutdownIfIdle,
@@ -28,6 +29,11 @@ let degradedNotified = false;
 
 function isEphemeral(ctx: ExtensionContext): boolean {
   return ctx.sessionManager.getSessionFile() === undefined;
+}
+
+function isSessionMissingError(error: unknown): boolean {
+  const text = String(error);
+  return text.includes("404") || text.includes("Session not found");
 }
 
 async function postEvent(
@@ -67,6 +73,52 @@ async function postSessionMetadata(
   await postEvent(localId, "session_metadata", undefined, payload);
 }
 
+async function registerWithBridge(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
+  const localId = ctx.sessionManager.getSessionId();
+  const status = sessionStatusFromContext(ctx);
+  await registerSession({
+    localId,
+    externalSessionId: localId,
+    cwd: ctx.cwd,
+    projectPath: ctx.cwd,
+    title: pi.getSessionName(),
+    pid: process.pid,
+    mode: ctx.mode,
+    status,
+  });
+}
+
+async function isRegisteredInBridge(localId: string): Promise<boolean> {
+  const items = await listBridgeSessions();
+  return items.some((session) => session.localId === localId);
+}
+
+async function ensureBridgeBinding(pi: ExtensionAPI, ctx: ExtensionContext): Promise<boolean> {
+  if (isEphemeral(ctx)) return false;
+
+  setBridgeConfigCwd(ctx.cwd);
+  if (!(await ensureBridge())) return false;
+
+  const localId = ctx.sessionManager.getSessionId();
+
+  try {
+    if (!(await isRegisteredInBridge(localId))) {
+      await registerWithBridge(pi, ctx);
+    }
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        level: "ERROR",
+        message: "Session bridge registration failed",
+        error: String(error),
+      }),
+    );
+    return false;
+  }
+
+  return true;
+}
+
 function startCommandConsumer(
   pi: ExtensionAPI,
   ctx: ExtensionContext,
@@ -76,6 +128,11 @@ function startCommandConsumer(
   void (async () => {
     while (!signal.aborted) {
       try {
+        if (!(await ensureBridgeBinding(pi, ctx))) {
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+          continue;
+        }
+
         const command = await waitForCommand(localId);
         if (signal.aborted) break;
         if (command) {
@@ -83,6 +140,11 @@ function startCommandConsumer(
         }
       } catch (error) {
         if (signal.aborted) break;
+        if (isSessionMissingError(error)) {
+          sessions.delete(localId);
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          continue;
+        }
         console.error(
           JSON.stringify({
             level: "WARN",
@@ -98,8 +160,6 @@ function startCommandConsumer(
 
 async function handleSessionStart(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
   if (isEphemeral(ctx)) return;
-
-  setBridgeConfigCwd(ctx.cwd);
 
   const ready = await ensureBridge();
   if (!ready) {
@@ -130,31 +190,12 @@ async function handleSessionStart(pi: ExtensionAPI, ctx: ExtensionContext): Prom
     sessions.delete(localId);
   }
 
-  const consumerAbort = new AbortController();
-  const status = sessionStatusFromContext(ctx);
-
-  try {
-    await registerSession({
-      localId,
-      externalSessionId: localId,
-      cwd: ctx.cwd,
-      projectPath: ctx.cwd,
-      title: pi.getSessionName(),
-      pid: process.pid,
-      mode: ctx.mode,
-      status,
-    });
-  } catch (error) {
-    console.error(
-      JSON.stringify({
-        level: "ERROR",
-        message: "Session bridge registration failed",
-        error: String(error),
-      }),
-    );
+  if (!(await ensureBridgeBinding(pi, ctx))) {
     return;
   }
 
+  const consumerAbort = new AbortController();
+  const status = sessionStatusFromContext(ctx);
   sessions.set(localId, { localId, consumerAbort });
   startCommandConsumer(pi, ctx, localId, consumerAbort.signal);
   await postEvent(localId, "session_start", status);

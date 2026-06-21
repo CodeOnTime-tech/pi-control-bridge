@@ -22,6 +22,11 @@ async function ipcRequest<T>(
   return (await response.json()) as T;
 }
 
+export async function listBridgeSessions(): Promise<Array<{ localId: string }>> {
+  const result = await ipcRequest<{ items: Array<{ localId: string }> }>("/sessions");
+  return result?.items ?? [];
+}
+
 export async function registerSession(
   payload: RegisterSessionRequest,
 ): Promise<RegisterSessionResponse> {

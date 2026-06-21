@@ -275,6 +275,7 @@ export class BridgeRuntime {
         this.registry.markHubSynced(session.localId, result.sessionId);
         this.commandDispatcher?.retryHeldCommands();
         await this.activateHubSession(result.sessionId);
+        await this.eventSender?.flushRetryQueue();
         this.logger.info("Pending session synced to hub", {
           localId: session.localId,
           hubSessionId: result.sessionId,
