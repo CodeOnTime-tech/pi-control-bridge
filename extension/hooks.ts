@@ -15,7 +15,7 @@ import {
 import { executeCommand } from "./command_handler.ts";
 import { ensureBridge, setBridgeConfigCwd } from "./ensure_bridge.ts";
 import { formatConnectTelegramMessage, formatControlStatusMessage } from "./messages.ts";
-import { buildSessionMetadata } from "./session_metadata.ts";
+import { buildSessionMetadata, extractLatestAssistantResponseFromMessages } from "./session_metadata.ts";
 import { sessionStatusAfterAgentEnd, sessionStatusFromContext } from "./session_status.ts";
 
 interface SessionBinding {
@@ -236,7 +236,8 @@ export function registerHooks(pi: ExtensionAPI): void {
   pi.on("agent_end", (event, ctx) => {
     const localId = ctx.sessionManager.getSessionId();
     const status = sessionStatusAfterAgentEnd(ctx);
-    void postEvent(localId, "agent_end", status);
+    const lastResult = extractLatestAssistantResponseFromMessages(event.messages);
+    void postEvent(localId, "agent_end", status, lastResult ? { lastResult } : undefined);
     void postSessionMetadata(pi, ctx, localId, { messages: event.messages });
   });
 

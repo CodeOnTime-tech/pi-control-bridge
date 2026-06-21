@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildSessionMetadata,
   extractFirstUserPrompt,
+  extractLatestAssistantResponseFromMessages,
   extractLatestUserPromptFromMessages,
 } from "../../extension/session_metadata.ts";
 
@@ -46,5 +47,43 @@ describe("session_metadata", () => {
     };
 
     expect(extractFirstUserPrompt(ctx as never)).toBe("first user ask");
+  });
+
+  it("returns latest assistant response from agent messages", () => {
+    const text = extractLatestAssistantResponseFromMessages([
+      { role: "user", content: "fix auth" },
+      { role: "assistant", content: "first answer" },
+      { role: "user", content: "also add tests" },
+      { role: "assistant", content: "Done. Added tests for middleware." },
+    ]);
+    expect(text).toBe("Done. Added tests for middleware.");
+  });
+
+  it("ignores user messages when extracting assistant response", () => {
+    const text = extractLatestAssistantResponseFromMessages([{ role: "user", content: "only prompt" }]);
+    expect(text).toBeUndefined();
+  });
+
+  it("extracts text blocks from assistant content arrays", () => {
+    const text = extractLatestAssistantResponseFromMessages([
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "Refactoring complete." }],
+      },
+    ]);
+    expect(text).toBe("Refactoring complete.");
+  });
+
+  it("strips ANSI codes from assistant response", () => {
+    const text = extractLatestAssistantResponseFromMessages([
+      { role: "assistant", content: "\x1b[1;96mRefactoring complete.\x1b[0m" },
+    ]);
+    expect(text).toBe("Refactoring complete.");
+  });
+
+  it("returns full assistant response without truncating", () => {
+    const longText = "a".repeat(5000);
+    const text = extractLatestAssistantResponseFromMessages([{ role: "assistant", content: longText }]);
+    expect(text).toBe(longText);
   });
 });

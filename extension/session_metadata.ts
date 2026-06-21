@@ -2,6 +2,8 @@ import { basename } from "node:path";
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
+import { stripAnsi } from "../shared/ansi.ts";
+
 const DESCRIPTION_MAX_LEN = 240;
 
 function truncate(text: string, maxLen: number): string {
@@ -43,6 +45,13 @@ function extractUserMessageText(message: unknown): string | undefined {
   return extractTextContent(candidate.content);
 }
 
+function extractAssistantMessageText(message: unknown): string | undefined {
+  if (!message || typeof message !== "object") return undefined;
+  const candidate = message as { role?: string; content?: unknown };
+  if (candidate.role !== "assistant") return undefined;
+  return extractTextContent(candidate.content);
+}
+
 export function extractFirstUserPrompt(ctx: ExtensionContext): string | undefined {
   for (const entry of ctx.sessionManager.getEntries()) {
     if (entry.type !== "message") continue;
@@ -56,6 +65,16 @@ export function extractLatestUserPromptFromMessages(messages: unknown[]): string
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const text = extractUserMessageText(messages[index]);
     if (text) return truncate(text, DESCRIPTION_MAX_LEN);
+  }
+  return undefined;
+}
+
+export function extractLatestAssistantResponseFromMessages(messages: unknown[]): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const text = extractAssistantMessageText(messages[index]);
+    if (!text) continue;
+    const cleaned = stripAnsi(text).trim();
+    if (cleaned) return cleaned;
   }
   return undefined;
 }

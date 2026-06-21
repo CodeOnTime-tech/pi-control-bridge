@@ -1,5 +1,9 @@
 const RESET = "\x1b[0m";
 
+export function stripAnsi(text: string): string {
+  return text.replace(/\x1b\[[0-9;]*m/g, "");
+}
+
 export const ansi = {
   reset: RESET,
   title: (text: string) => `\x1b[1;96m${text}${RESET}`,
