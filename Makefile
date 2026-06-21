@@ -2,23 +2,23 @@ BASEDIR := $(CURDIR)
 SHELL := /bin/bash
 NPM ?= npm
 
-.PHONY: help install build test check version publish release bridge-stop
+.PHONY: help install build test check version publish release stop install-local
 
-help: 
+help: ## Show available targets
 	@echo "Usage: make <target>"
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-install: 
+install: ## Install npm dependencies
 	$(NPM) install
 
-build: 
+build: ## Build bridge runtime (dist/bridge/main.js)
 	$(NPM) run build
 
-test: 
+test: ## Run unit tests
 	$(NPM) test
 
-check: 
+check: ## TypeScript type check
 	$(NPM) run check
 
 version:
@@ -27,10 +27,15 @@ version:
 	git commit -m "Bump version"
 	git push
 
-stop: build
+stop: build ## Stop running bridge process
 	node dist/bridge/main.js stop
 
-publish: build 
+publish: build ## Publish npm package
 	$(NPM) publish
 
-release: check test version publish 
+release: check test version publish
+
+install-local: build ## Build and register this repo in the local Pi agent
+	@echo "Removing stale dist/bridge/main.js entry (if any)..."
+	-pi uninstall $(CURDIR)/dist/bridge/main.js
+	pi install $(CURDIR)
