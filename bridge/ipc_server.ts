@@ -174,6 +174,9 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
     if (!linked && state && shouldProbeTelegramLink(state)) {
       try {
         linked = await deps.backend.isTelegramLinked(state.deviceToken, 0);
+        if (linked) {
+          deps.markTelegramLinked?.(true);
+        }
       } catch (error) {
         if (error instanceof BackendAuthError) {
           linked = false;
@@ -183,62 +186,29 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
       }
     }
 
-    if (!linked) {
-      const record = {
-        localId: body.localId,
-        externalSessionId: body.externalSessionId,
-        hubSessionId: body.localId,
-        cwd: body.cwd,
-        projectPath: body.projectPath,
-        title: body.title,
-        pid: body.pid,
-        mode: body.mode,
-        registeredAt: new Date().toISOString(),
-        hubPending: true,
-        status: body.status ?? "running",
-      };
-      deps.registry.register(record);
-      deps.onSessionRegistered?.();
-      deps.logger.info("Session registered locally (hub sync deferred)", {
-        externalSessionId: body.externalSessionId,
-      });
-      return c.json({ hubSessionId: record.localId, status: "pending" });
+    const record = {
+      localId: body.localId,
+      externalSessionId: body.externalSessionId,
+      hubSessionId: body.localId,
+      cwd: body.cwd,
+      projectPath: body.projectPath,
+      title: body.title,
+      pid: body.pid,
+      mode: body.mode,
+      registeredAt: new Date().toISOString(),
+      hubPending: true,
+      status: body.status ?? "running",
+    };
+    deps.registry.register(record);
+    deps.onSessionRegistered?.();
+    if (state && (linked || shouldProbeTelegramLink(state))) {
+      void deps.syncPendingSessions();
     }
-
-    try {
-      const hubState = await deps.ensureHubDeviceRegistered();
-      const result = await deps.backend.registerSession(hubState.deviceToken, {
-        external_session_id: body.externalSessionId,
-        title: body.title,
-        project_path: body.projectPath,
-        cwd: body.cwd,
-        status: body.status ?? "running",
-      });
-
-      const record = {
-        localId: body.localId,
-        externalSessionId: body.externalSessionId,
-        hubSessionId: result.sessionId,
-        cwd: body.cwd,
-        projectPath: body.projectPath,
-        title: body.title,
-        pid: body.pid,
-        mode: body.mode,
-        registeredAt: new Date().toISOString(),
-        status: body.status ?? result.status,
-      };
-      deps.registry.register(record);
-      deps.onSessionRegistered?.();
-      deps.logger.info("Session registered", {
-        deviceId: hubState.deviceId,
-        externalSessionId: body.externalSessionId,
-        hubSessionId: record.hubSessionId,
-      });
-      return c.json({ hubSessionId: record.hubSessionId, status: result.status });
-    } catch (error) {
-      deps.logger.error("Session register failed", { error: String(error) });
-      return c.json({ error: String(error) }, 502);
-    }
+    deps.logger.info("Session registered locally", {
+      externalSessionId: body.externalSessionId,
+      hubSyncDeferred: true,
+    });
+    return c.json({ hubSessionId: record.localId, status: record.status });
   });
 
   app.post("/shutdown-if-idle", (c) => {

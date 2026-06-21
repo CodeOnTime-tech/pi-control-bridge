@@ -29,7 +29,7 @@ export class BridgeRuntime {
   private readonly backend = new BackendClient(this.config, this.logger);
 
   async start(): Promise<void> {
-    await this.initOnStart();
+    this.loadDeviceStateFromStore();
 
     const eventSender = new EventSender(
       this.backend,
@@ -108,37 +108,50 @@ export class BridgeRuntime {
       deviceId: this.deviceState?.deviceId,
       ipcPort: this.config.ipcPort,
     });
+
+    void this.initOnStart().catch((error) => {
+      if (error instanceof BackendAuthError) {
+        this.handleInvalidDeviceToken();
+        return;
+      }
+      this.logger.warn("Hub init on start failed", { error: String(error) });
+    });
   }
 
-  private async initOnStart(): Promise<void> {
+  private loadDeviceStateFromStore(): void {
     const saved = this.stateStore.load();
     if (!saved?.deviceToken) {
       this.deviceState = null;
+      return;
+    }
+
+    this.deviceState = {
+      ...saved,
+      fingerprint: computeDeviceFingerprint(),
+      hubUrl: this.config.hubUrl,
+    };
+  }
+
+  private async initOnStart(): Promise<void> {
+    if (!this.deviceState) {
       this.logger.info("Bridge started idle: hub registration deferred until Telegram is linked");
       return;
     }
 
-    const fingerprint = computeDeviceFingerprint();
-    this.deviceState = {
-      ...saved,
-      fingerprint,
-      hubUrl: this.config.hubUrl,
-    };
-
-    if (!shouldProbeTelegramLink(saved)) {
+    if (!shouldProbeTelegramLink(this.deviceState)) {
       this.logger.info("Telegram not linked — deferring hub probes until connect-telegram");
       return;
     }
 
     try {
-      const linked = await this.backend.isTelegramLinked(saved.deviceToken);
+      const linked = await this.backend.isTelegramLinked(this.deviceState.deviceToken);
       if (linked) {
         this.markTelegramLinked(true);
         await this.ensureHubDeviceRegistered();
         await this.syncPendingSessions();
         return;
       }
-      if (saved.telegramBindPending) {
+      if (this.deviceState.telegramBindPending) {
         this.logger.info("Telegram bind pending — waiting for user to complete /start in bot");
         return;
       }

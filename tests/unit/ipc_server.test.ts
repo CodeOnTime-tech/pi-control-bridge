@@ -80,11 +80,50 @@ describe("createIpcApp", () => {
 
     expect(response.status).toBe(200);
     const body = (await response.json()) as { hubSessionId: string; status: string };
-    expect(body.status).toBe("pending");
+    expect(body.status).toBe("waiting_user");
     const pending = registry.listPendingHubSync();
     expect(pending).toHaveLength(1);
     expect(pending[0]?.status).toBe("waiting_user");
     expect(deps.ensureHubDeviceRegistered).not.toHaveBeenCalled();
+    expect(deps.syncPendingSessions).not.toHaveBeenCalled();
+  });
+
+  it("registers session locally when telegram is linked and syncs in background", async () => {
+    const registry = new SessionRegistry();
+    const eventSender = { send: vi.fn(), enqueue: vi.fn(), pendingEventsCount: () => 0 } as unknown as EventSender;
+    const syncPendingSessions = vi.fn(async () => undefined);
+    const ensureHubDeviceRegistered = vi.fn();
+    const deps = createDeps(registry, eventSender);
+    deps.getDeviceState = () => ({
+      deviceId: "device-1",
+      deviceToken: "token-1",
+      fingerprint: "fp-1",
+      hubUrl: "http://127.0.0.1:8000",
+      telegramLinked: true,
+    });
+    deps.syncPendingSessions = syncPendingSessions;
+    deps.ensureHubDeviceRegistered = ensureHubDeviceRegistered;
+    const app = createIpcApp(deps);
+
+    const response = await app.request("http://127.0.0.1/sessions/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        localId: "local-2",
+        externalSessionId: "ext-2",
+        cwd: "/tmp",
+        pid: 1,
+        mode: "tui",
+        status: "running",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { hubSessionId: string; status: string };
+    expect(body.status).toBe("running");
+    expect(registry.listPendingHubSync()).toHaveLength(1);
+    expect(ensureHubDeviceRegistered).not.toHaveBeenCalled();
+    expect(syncPendingSessions).toHaveBeenCalledOnce();
   });
 
   it("returns bot link without new token when telegram is already linked", async () => {
