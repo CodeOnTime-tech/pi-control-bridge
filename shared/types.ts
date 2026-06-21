@@ -63,6 +63,12 @@ export interface SessionEventPayload {
   eventId: string;
 }
 
+export interface SessionMapping {
+  localId: string;
+  hubSessionId: string;
+  hubPending: boolean;
+}
+
 export interface BridgeStatus {
   ok: boolean;
   deviceId?: string;
@@ -71,6 +77,12 @@ export interface BridgeStatus {
   activeSessions: number;
   pendingEvents: number;
   ipcPort: number;
+  hubPendingSessions?: number;
+  heldCommands?: number;
+  lastPollAt?: string;
+  lastCommandReceivedAt?: string;
+  lastPollError?: string;
+  sessionMappings?: SessionMapping[];
 }
 
 export interface RegisterSessionRequest {

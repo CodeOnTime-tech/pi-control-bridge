@@ -33,6 +33,39 @@ describe("CommandDispatcher", () => {
     });
 
     expect(ackCommand).not.toHaveBeenCalled();
+    expect(dispatcher.heldCommandsCount()).toBe(1);
+  });
+
+  it("retries held commands after hub session sync", async () => {
+    const registry = new SessionRegistry();
+    registry.register({
+      localId: "local-1",
+      externalSessionId: "ext-1",
+      hubSessionId: "local-1",
+      cwd: "/tmp",
+      pid: 1,
+      mode: "tui",
+      registeredAt: new Date().toISOString(),
+      hubPending: true,
+    });
+    const { dispatcher, ackCommand } = makeDispatcher(registry);
+
+    await dispatcher.dispatch({
+      command_id: "cmd-held",
+      session_id: "hub-real",
+      kind: "prompt",
+      payload: { text: "retry me" },
+    });
+    expect(ackCommand).not.toHaveBeenCalled();
+    expect(dispatcher.heldCommandsCount()).toBe(1);
+
+    registry.markHubSynced("local-1", "hub-real");
+    await dispatcher.retryHeldCommands();
+
+    expect(ackCommand).toHaveBeenCalledOnce();
+    expect(dispatcher.heldCommandsCount()).toBe(0);
+    const pending = await registry.waitForCommand("local-1", 50);
+    expect(pending?.commandId).toBe("cmd-held");
   });
 
   it("acks after enqueue and deduplicates redelivery", async () => {

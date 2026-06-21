@@ -1,12 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { CommandDispatcher } from "../../bridge/command_dispatcher.ts";
 import { createIpcApp } from "../../bridge/ipc_server.ts";
+import { BridgeDiagnostics } from "../../bridge/diagnostics.ts";
 import { SessionRegistry } from "../../bridge/registry.ts";
 import type { EventSender } from "../../bridge/event_sender.ts";
 import type { BackendClient } from "../../bridge/backend_client.ts";
 import { Logger } from "../../shared/logger.ts";
 
-function createDeps(registry: SessionRegistry, eventSender: EventSender) {
+function createDeps(
+  registry: SessionRegistry,
+  eventSender: EventSender,
+  extras?: {
+    commandDispatcher?: CommandDispatcher;
+    diagnostics?: BridgeDiagnostics;
+  },
+) {
   const logger = new Logger("ERROR");
 
   return {
@@ -22,6 +31,8 @@ function createDeps(registry: SessionRegistry, eventSender: EventSender) {
     ensureHubDeviceRegistered: vi.fn(),
     syncPendingSessions: vi.fn(),
     markTelegramLinked: vi.fn(),
+    commandDispatcher: extras?.commandDispatcher,
+    diagnostics: extras?.diagnostics,
   };
 }
 
@@ -179,5 +190,42 @@ describe("createIpcApp", () => {
     const response = await app.request("http://127.0.0.1/sessions/missing/commands/wait");
 
     expect(response.status).toBe(404);
+  });
+
+  it("includes command diagnostics in health response", async () => {
+    const registry = new SessionRegistry();
+    registry.register({
+      localId: "local-1",
+      externalSessionId: "ext-1",
+      hubSessionId: "local-1",
+      cwd: "/tmp",
+      pid: 1,
+      mode: "tui",
+      registeredAt: new Date().toISOString(),
+      hubPending: true,
+    });
+    const ackCommand = vi.fn().mockResolvedValue(undefined);
+    const backend = {
+      ackCommand,
+      getLastCorrelationId: () => "corr-1",
+    } as unknown as BackendClient;
+    const dispatcher = new CommandDispatcher(registry, backend, new Logger("ERROR"), () => "token");
+    const diagnostics = new BridgeDiagnostics();
+    diagnostics.markPollStarted();
+    diagnostics.markCommandReceived();
+
+    const eventSender = { send: vi.fn(), enqueue: vi.fn(), pendingEventsCount: () => 2 } as unknown as EventSender;
+    const app = createIpcApp(createDeps(registry, eventSender, { commandDispatcher: dispatcher, diagnostics }));
+
+    const response = await app.request("http://127.0.0.1/health");
+    const body = (await response.json()) as Record<string, unknown>;
+
+    expect(body.hubPendingSessions).toBe(1);
+    expect(body.heldCommands).toBe(0);
+    expect(body.lastPollAt).toBeTypeOf("string");
+    expect(body.lastCommandReceivedAt).toBeTypeOf("string");
+    expect(body.sessionMappings).toEqual([
+      { localId: "local-1", hubSessionId: "local-1", hubPending: true },
+    ]);
   });
 });

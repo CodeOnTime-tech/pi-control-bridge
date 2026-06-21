@@ -15,6 +15,8 @@ import type {
   SessionEventPayload,
 } from "../shared/types.ts";
 import { BackendAuthError, type BackendClient } from "./backend_client.ts";
+import type { CommandDispatcher } from "./command_dispatcher.ts";
+import type { BridgeDiagnostics } from "./diagnostics.ts";
 import type { EventSender } from "./event_sender.ts";
 import type { SessionRegistry } from "./registry.ts";
 
@@ -35,6 +37,19 @@ export interface IpcServerDeps {
   markTelegramBindPending?: () => void;
   markTelegramLinked?: (linked: boolean) => void;
   onShutdown?: () => void;
+  commandDispatcher?: CommandDispatcher;
+  diagnostics?: BridgeDiagnostics;
+}
+
+function buildBridgeDiagnostics(deps: IpcServerDeps): Partial<BridgeStatus> {
+  return {
+    hubPendingSessions: deps.registry.listPendingHubSync().length,
+    heldCommands: deps.commandDispatcher?.heldCommandsCount() ?? 0,
+    lastPollAt: deps.diagnostics?.lastPollAt,
+    lastCommandReceivedAt: deps.diagnostics?.lastCommandReceivedAt,
+    lastPollError: deps.diagnostics?.lastPollError,
+    sessionMappings: deps.registry.getSessionMappings(),
+  };
 }
 
 export function createIpcApp(deps: IpcServerDeps): Hono {
@@ -50,6 +65,7 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
       activeSessions: deps.registry.size(),
       pendingEvents: deps.eventSender.pendingEventsCount(),
       ipcPort: deps.ipcPort,
+      ...buildBridgeDiagnostics(deps),
     };
     return c.json({ ...status, version: PACKAGE_VERSION });
   });
@@ -67,6 +83,7 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
       version: PACKAGE_VERSION,
       telegram: { linked: false },
       bot: {},
+      ...buildBridgeDiagnostics(deps),
     };
 
     if (!state) {

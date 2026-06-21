@@ -1,5 +1,6 @@
 import { BackendAuthError, type BackendClient } from "./backend_client.ts";
 import type { CommandDispatcher } from "./command_dispatcher.ts";
+import type { BridgeDiagnostics } from "./diagnostics.ts";
 import type { EventSender } from "./event_sender.ts";
 import type { Logger } from "../shared/logger.ts";
 import type { BridgeConfig, DeviceState } from "../shared/types.ts";
@@ -75,6 +76,7 @@ export function startPollerLoop(
   shouldProbeTelegram: (state: DeviceState) => boolean,
   onTelegramLinked?: () => Promise<void>,
   onAuthFailure?: () => void,
+  diagnostics?: BridgeDiagnostics,
 ): () => void {
   let stopped = false;
   let previousLinked = false;
@@ -126,17 +128,22 @@ export function startPollerLoop(
       if (!active && !hasPendingEvents) return;
 
       try {
+        diagnostics?.markPollStarted();
         if (hasPendingEvents) {
           await eventSender.flushRetryQueue();
         }
         if (!active) return;
 
         const commands = await backend.getNextCommands(state.deviceId, state.deviceToken);
+        if (commands.length > 0) {
+          diagnostics?.markCommandReceived();
+        }
         for (const command of commands) {
           await dispatcher.dispatch(command);
         }
-        dispatcher.retryHeldCommands();
+        await dispatcher.retryHeldCommands();
       } catch (error) {
+        diagnostics?.markPollFailed(String(error));
         logger.warn("Command polling failed", {
           deviceId: state.deviceId,
           error: String(error),

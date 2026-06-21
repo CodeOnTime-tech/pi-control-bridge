@@ -68,6 +68,14 @@ export class SessionRegistry {
     return [...this.sessions.values()];
   }
 
+  getSessionMappings(): Array<{ localId: string; hubSessionId: string; hubPending: boolean }> {
+    return this.list().map((session) => ({
+      localId: session.localId,
+      hubSessionId: session.hubSessionId,
+      hubPending: session.hubPending === true,
+    }));
+  }
+
   size(): number {
     return this.sessions.size;
   }

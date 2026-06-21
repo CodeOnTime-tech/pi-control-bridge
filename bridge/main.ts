@@ -4,6 +4,7 @@ import { Logger } from "../shared/logger.ts";
 import type { DeviceState } from "../shared/types.ts";
 import { BackendAuthError, BackendClient } from "./backend_client.ts";
 import { CommandDispatcher } from "./command_dispatcher.ts";
+import { BridgeDiagnostics } from "./diagnostics.ts";
 import { DeviceStateStore } from "./device_state_store.ts";
 import { EventSender } from "./event_sender.ts";
 import { computeDeviceFingerprint } from "./fingerprint.ts";
@@ -28,6 +29,7 @@ export class BridgeRuntime {
   private readonly registry = new SessionRegistry();
   private readonly retryQueue = new RetryQueue(this.config.bridgeDataDir);
   private readonly backend = new BackendClient(this.config, this.logger);
+  private readonly diagnostics = new BridgeDiagnostics();
 
   async start(): Promise<void> {
     this.loadDeviceStateFromStore();
@@ -64,6 +66,8 @@ export class BridgeRuntime {
       scheduleShutdownIfIdle: () => this.scheduleShutdownIfIdle(),
       markTelegramBindPending: () => this.markTelegramBindPending(),
       markTelegramLinked: (linked: boolean) => this.markTelegramLinked(linked),
+      commandDispatcher: dispatcher,
+      diagnostics: this.diagnostics,
       onShutdown: () => {
         setImmediate(() => {
           this.logger.info("Shutdown requested");
@@ -107,8 +111,10 @@ export class BridgeRuntime {
       async () => {
         this.markTelegramLinked(true);
         await this.syncPendingSessions();
+        await this.activateAllSyncedSessions();
       },
       onAuthFailure,
+      this.diagnostics,
     );
 
     this.logger.info("Bridge runtime started", {
@@ -156,6 +162,7 @@ export class BridgeRuntime {
         this.markTelegramLinked(true);
         await this.ensureHubDeviceRegistered();
         await this.syncPendingSessions();
+        await this.activateAllSyncedSessions();
         return;
       }
       if (this.deviceState.telegramBindPending) {
@@ -273,7 +280,7 @@ export class BridgeRuntime {
           status: session.status ?? "running",
         });
         this.registry.markHubSynced(session.localId, result.sessionId);
-        this.commandDispatcher?.retryHeldCommands();
+        await this.commandDispatcher?.retryHeldCommands();
         await this.activateHubSession(result.sessionId);
         await this.eventSender?.flushRetryQueue();
         this.logger.info("Pending session synced to hub", {
@@ -290,6 +297,16 @@ export class BridgeRuntime {
     }
 
     await this.eventSender?.flushRetryQueue();
+    await this.activateAllSyncedSessions();
+  }
+
+  private async activateAllSyncedSessions(): Promise<void> {
+    for (const session of this.registry.list()) {
+      if (session.hubPending || session.hubSessionId === session.localId) {
+        continue;
+      }
+      await this.activateHubSession(session.hubSessionId);
+    }
   }
 
   private pruneDeadSessions(): void {
