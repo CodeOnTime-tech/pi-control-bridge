@@ -19,6 +19,7 @@ export class BridgeRuntime {
   private stopPoller?: () => void;
   private ipcClose?: () => void;
   private shutdownTimer?: NodeJS.Timeout;
+  private deviceRegistration?: Promise<DeviceState>;
 
   private readonly config = loadBridgeConfig();
   private readonly logger = new Logger(this.config.bridgeLogLevel);
@@ -178,6 +179,15 @@ export class BridgeRuntime {
   }
 
   async ensureHubDeviceRegistered(): Promise<DeviceState> {
+    if (!this.deviceRegistration) {
+      this.deviceRegistration = this.registerHubDevice().finally(() => {
+        this.deviceRegistration = undefined;
+      });
+    }
+    return this.deviceRegistration;
+  }
+
+  private async registerHubDevice(): Promise<DeviceState> {
     const fingerprint = computeDeviceFingerprint();
     const saved = this.stateStore.load();
     const existingToken = this.deviceState?.deviceToken ?? saved?.deviceToken;

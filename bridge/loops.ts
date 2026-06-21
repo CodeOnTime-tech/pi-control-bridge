@@ -15,37 +15,43 @@ export function startHeartbeatLoop(
   onAuthFailure?: () => void,
 ): () => void {
   let stopped = false;
+  let tickInFlight = false;
 
   const tick = async (): Promise<void> => {
-    if (stopped) return;
-    if (!hasActiveSessions()) return;
-    const state = getDeviceState();
-    if (!state) return;
+    if (stopped || tickInFlight) return;
+    tickInFlight = true;
+    try {
+      if (!hasActiveSessions()) return;
+      const state = getDeviceState();
+      if (!state) return;
 
-    let telegramLinked = state.telegramLinked === true;
-    if (!telegramLinked) {
-      if (!shouldProbeTelegram(state)) return;
-      try {
-        telegramLinked = await backend.isTelegramLinked(state.deviceToken);
-      } catch (error) {
-        if (error instanceof BackendAuthError) {
-          onAuthFailure?.();
+      let telegramLinked = state.telegramLinked === true;
+      if (!telegramLinked) {
+        if (!shouldProbeTelegram(state)) return;
+        try {
+          telegramLinked = await backend.isTelegramLinked(state.deviceToken);
+        } catch (error) {
+          if (error instanceof BackendAuthError) {
+            onAuthFailure?.();
+            return;
+          }
           return;
         }
-        return;
+        if (!telegramLinked) return;
       }
-      if (!telegramLinked) return;
-    }
 
-    try {
-      await backend.heartbeat(state.deviceToken);
-      onHeartbeat({
-        ...state,
-        lastHeartbeatAt: new Date().toISOString(),
-      });
-      logger.debug("Heartbeat ok", { deviceId: state.deviceId });
-    } catch (error) {
-      logger.warn("Heartbeat failed", { deviceId: state.deviceId, error: String(error) });
+      try {
+        await backend.heartbeat(state.deviceToken);
+        onHeartbeat({
+          ...state,
+          lastHeartbeatAt: new Date().toISOString(),
+        });
+        logger.debug("Heartbeat ok", { deviceId: state.deviceId });
+      } catch (error) {
+        logger.warn("Heartbeat failed", { deviceId: state.deviceId, error: String(error) });
+      }
+    } finally {
+      tickInFlight = false;
     }
   };
 
@@ -72,59 +78,72 @@ export function startPollerLoop(
 ): () => void {
   let stopped = false;
   let previousLinked = false;
+  let tickInFlight = false;
 
   const tick = async (): Promise<void> => {
-    if (stopped) return;
-    const state = getDeviceState();
-    if (!state) return;
+    if (stopped || tickInFlight) return;
+    tickInFlight = true;
+    try {
+      const state = getDeviceState();
+      if (!state) return;
 
-    let telegramLinked = state.telegramLinked === true;
-    if (!telegramLinked) {
-      if (!shouldProbeTelegram(state)) {
-        previousLinked = false;
-        return;
-      }
-      try {
-        telegramLinked = await backend.isTelegramLinked(
-          state.deviceToken,
-          previousLinked ? undefined : 0,
-        );
-      } catch (error) {
-        if (error instanceof BackendAuthError) {
-          onAuthFailure?.();
+      let telegramLinked = state.telegramLinked === true;
+      if (!telegramLinked) {
+        if (!shouldProbeTelegram(state)) {
           previousLinked = false;
           return;
         }
+        try {
+          telegramLinked = await backend.isTelegramLinked(
+            state.deviceToken,
+            previousLinked ? undefined : 0,
+          );
+        } catch (error) {
+          if (error instanceof BackendAuthError) {
+            onAuthFailure?.();
+            previousLinked = false;
+            return;
+          }
+          return;
+        }
+      }
+
+      if (telegramLinked && !previousLinked) {
+        previousLinked = true;
+        try {
+          await onTelegramLinked?.();
+        } catch {
+          previousLinked = false;
+        }
+      }
+      if (!telegramLinked) {
+        previousLinked = false;
         return;
       }
-    }
 
-    if (telegramLinked && !previousLinked) {
-      await onTelegramLinked?.();
-    }
-    previousLinked = telegramLinked;
-    if (!telegramLinked) return;
+      const active = hasActiveSessions();
+      const hasPendingEvents = eventSender.pendingEventsCount() > 0;
+      if (!active && !hasPendingEvents) return;
 
-    const active = hasActiveSessions();
-    const hasPendingEvents = eventSender.pendingEventsCount() > 0;
-    if (!active && !hasPendingEvents) return;
+      try {
+        if (hasPendingEvents) {
+          await eventSender.flushRetryQueue();
+        }
+        if (!active) return;
 
-    try {
-      if (hasPendingEvents) {
-        await eventSender.flushRetryQueue();
+        const commands = await backend.getNextCommands(state.deviceId, state.deviceToken);
+        for (const command of commands) {
+          await dispatcher.dispatch(command);
+        }
+        dispatcher.retryHeldCommands();
+      } catch (error) {
+        logger.warn("Command polling failed", {
+          deviceId: state.deviceId,
+          error: String(error),
+        });
       }
-      if (!active) return;
-
-      const commands = await backend.getNextCommands(state.deviceId, state.deviceToken);
-      for (const command of commands) {
-        await dispatcher.dispatch(command);
-      }
-      dispatcher.retryHeldCommands();
-    } catch (error) {
-      logger.warn("Command polling failed", {
-        deviceId: state.deviceId,
-        error: String(error),
-      });
+    } finally {
+      tickInFlight = false;
     }
   };
 

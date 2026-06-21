@@ -1,7 +1,7 @@
 export const PACKAGE_VERSION = "0.3.3";
 
 export const DEFAULT_HUB_URL = "http://127.0.0.1:8000";
-export const DEFAULT_POLL_INTERVAL_SEC = 2;
+export const DEFAULT_POLL_INTERVAL_SEC = 5;
 export const DEFAULT_HEARTBEAT_INTERVAL_SEC = 15;
 export const DEFAULT_COMMAND_BATCH_SIZE = 10;
 export const DEFAULT_BRIDGE_LOG_LEVEL = "INFO";

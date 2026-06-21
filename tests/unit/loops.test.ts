@@ -292,4 +292,52 @@ describe("bridge loops", () => {
 
     stop();
   });
+
+  it("calls onTelegramLinked only once when link is detected concurrently", async () => {
+    let resolveLinked!: () => void;
+    const linkedPromise = new Promise<boolean>((resolve) => {
+      resolveLinked = () => resolve(true);
+    });
+
+    const backend = {
+      getNextCommands: vi.fn().mockResolvedValue([]),
+      isTelegramLinked: vi.fn().mockImplementation(() => linkedPromise),
+    } as unknown as BackendClient;
+    const eventSender = {
+      pendingEventsCount: vi.fn().mockReturnValue(0),
+      flushRetryQueue: vi.fn().mockResolvedValue(undefined),
+    } as unknown as EventSender;
+    const dispatcher = {
+      dispatch: vi.fn(),
+      retryHeldCommands: vi.fn(),
+    } as unknown as CommandDispatcher;
+    const onTelegramLinked = vi.fn().mockResolvedValue(undefined);
+
+    const unlinkedState: DeviceState = {
+      ...deviceState,
+      telegramLinked: false,
+      telegramBindPending: true,
+    };
+
+    const stop = startPollerLoop(
+      config,
+      backend,
+      dispatcher,
+      eventSender,
+      logger,
+      () => unlinkedState,
+      () => true,
+      () => true,
+      onTelegramLinked,
+    );
+
+    await vi.runOnlyPendingTimersAsync();
+    resolveLinked();
+    await vi.advanceTimersByTimeAsync(config.pollIntervalSec * 1000);
+    await vi.runOnlyPendingTimersAsync();
+
+    expect(onTelegramLinked).toHaveBeenCalledTimes(1);
+
+    stop();
+  });
 });

@@ -38,7 +38,7 @@ Copy [`bridge.config.example.json`](bridge.config.example.json) as a starting po
 | Key | Default | Description |
 |---|---|---|
 | `hub_url` | `http://127.0.0.1:8000` | pi-control-hub base URL |
-| `poll_interval_sec` | `2` | Command polling interval |
+| `poll_interval_sec` | `5` | Command polling interval |
 | `heartbeat_interval_sec` | `15` | Device heartbeat interval |
 | `bridge_data_dir` | `~/.pi/agent/bridge` | State and retry queue directory |
 | `ipc_port` | `9473` | Local IPC HTTP port |
