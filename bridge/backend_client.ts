@@ -233,6 +233,12 @@ export class BackendClient {
     });
   }
 
+  async activateSession(sessionId: string, telegramChatId: number): Promise<void> {
+    await this.request("POST", `/sessions/${encodeURIComponent(sessionId)}/activate`, {
+      query: { telegram_chat_id: String(telegramChatId) },
+    });
+  }
+
   async postSessionEvent(
     deviceToken: string,
     payload: {

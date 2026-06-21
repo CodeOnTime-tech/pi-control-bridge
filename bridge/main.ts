@@ -57,6 +57,8 @@ export class BridgeRuntime {
       getDeviceState: () => this.deviceState,
       ensureHubDeviceRegistered: () => this.ensureHubDeviceRegistered(),
       syncPendingSessions: () => this.syncPendingSessions(),
+      activateHubSession: (hubSessionId) => this.activateHubSession(hubSessionId),
+      pruneDeadSessions: () => this.pruneDeadSessions(),
       onEmptyRegistry: () => this.scheduleShutdownIfIdle(),
       onSessionRegistered: () => this.cancelScheduledShutdown(),
       scheduleShutdownIfIdle: () => this.scheduleShutdownIfIdle(),
@@ -72,7 +74,10 @@ export class BridgeRuntime {
     });
     this.ipcClose = ipc.close;
 
-    const hasActiveSessions = () => this.registry.size() > 0;
+    const hasActiveSessions = () => {
+      this.pruneDeadSessions();
+      return this.registry.size() > 0;
+    };
     const shouldProbeTelegram = (state: DeviceState) => shouldProbeTelegramLink(state);
     const onAuthFailure = () => this.handleInvalidDeviceToken();
 
@@ -269,6 +274,7 @@ export class BridgeRuntime {
         });
         this.registry.markHubSynced(session.localId, result.sessionId);
         this.commandDispatcher?.retryHeldCommands();
+        await this.activateHubSession(result.sessionId);
         this.logger.info("Pending session synced to hub", {
           localId: session.localId,
           hubSessionId: result.sessionId,
@@ -283,6 +289,30 @@ export class BridgeRuntime {
     }
 
     await this.eventSender?.flushRetryQueue();
+  }
+
+  private pruneDeadSessions(): void {
+    const removed = this.registry.pruneDeadSessions();
+    for (const localId of removed) {
+      this.logger.info("Removed dead Pi session from bridge registry", { localId });
+    }
+  }
+
+  private async activateHubSession(hubSessionId: string): Promise<void> {
+    const state = this.deviceState;
+    if (!state?.deviceToken) return;
+    try {
+      const info = await this.backend.getConnectionInfo(state.deviceToken);
+      const chatId = info.telegram.chatId;
+      if (!chatId) return;
+      await this.backend.activateSession(hubSessionId, chatId);
+      this.logger.info("Session activated on hub for Telegram", { hubSessionId });
+    } catch (error) {
+      this.logger.warn("Hub session activate failed", {
+        hubSessionId,
+        error: String(error),
+      });
+    }
   }
 
   scheduleShutdownIfIdle(): boolean {

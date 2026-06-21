@@ -188,4 +188,31 @@ describe("SessionRegistry", () => {
     });
     expect(registry.getLocalIdByHubSessionId("hub-2")).toBe("local-2");
   });
+
+  it("pruneDeadSessions removes sessions whose pid is not running", () => {
+    const registry = new SessionRegistry();
+    registry.register({
+      localId: "local-dead",
+      externalSessionId: "ext-dead",
+      hubSessionId: "hub-dead",
+      cwd: "/tmp",
+      pid: 999_999_999,
+      mode: "tui",
+      registeredAt: new Date().toISOString(),
+    });
+    registry.register({
+      localId: "local-live",
+      externalSessionId: "ext-live",
+      hubSessionId: "hub-live",
+      cwd: "/tmp",
+      pid: process.pid,
+      mode: "tui",
+      registeredAt: new Date().toISOString(),
+    });
+
+    const removed = registry.pruneDeadSessions();
+    expect(removed).toEqual(["local-dead"]);
+    expect(registry.size()).toBe(1);
+    expect(registry.getByLocalId("local-live")?.localId).toBe("local-live");
+  });
 });

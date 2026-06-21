@@ -1,4 +1,5 @@
 import type { LocalSessionRecord, PendingCommand } from "../shared/types.ts";
+import { isProcessAlive } from "../shared/process.ts";
 
 export class SessionRegistry {
   private readonly sessions = new Map<string, LocalSessionRecord>();
@@ -69,6 +70,17 @@ export class SessionRegistry {
 
   size(): number {
     return this.sessions.size;
+  }
+
+  /** Drop sessions whose Pi process has exited. Returns removed local ids. */
+  pruneDeadSessions(): string[] {
+    const removed: string[] = [];
+    for (const session of this.list()) {
+      if (isProcessAlive(session.pid)) continue;
+      this.unregister(session.localId);
+      removed.push(session.localId);
+    }
+    return removed;
   }
 
   enqueueCommand(localId: string, command: PendingCommand): boolean {

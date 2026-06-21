@@ -27,6 +27,8 @@ export interface IpcServerDeps {
   getDeviceState: () => DeviceState | null;
   ensureHubDeviceRegistered: () => Promise<DeviceState>;
   syncPendingSessions: () => Promise<void>;
+  activateHubSession?: (hubSessionId: string) => Promise<void>;
+  pruneDeadSessions?: () => void;
   onEmptyRegistry?: () => void;
   onSessionRegistered?: () => void;
   scheduleShutdownIfIdle?: () => boolean;
@@ -169,6 +171,7 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
 
   app.post("/sessions/register", async (c) => {
     const body = (await c.req.json()) as RegisterSessionRequest;
+    deps.pruneDeadSessions?.();
     const state = deps.getDeviceState();
     let linked = state?.telegramLinked === true;
     if (!linked && state && shouldProbeTelegramLink(state)) {
@@ -201,6 +204,10 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
     };
     deps.registry.register(record);
     deps.onSessionRegistered?.();
+    const synced = deps.registry.getByLocalId(body.localId);
+    if (synced && !synced.hubPending) {
+      void deps.activateHubSession?.(synced.hubSessionId);
+    }
     if (state && (linked || shouldProbeTelegramLink(state))) {
       void deps.syncPendingSessions();
     }

@@ -36,4 +36,7 @@ publish: build ## Publish npm package
 release: check test version publish
 
 install-local: stop build ## Build and register this repo in the local Pi agent
+	@echo "Removing conflicting pi-control-bridge installations (if any)..."
+	-pi uninstall npm:pi-control-bridge
+	-pi uninstall $(CURDIR)
 	pi install $(CURDIR)

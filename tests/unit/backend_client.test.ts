@@ -106,3 +106,30 @@ describe("BackendClient.isTelegramLinked cache", () => {
     await expect(client.isTelegramLinked("token-1")).rejects.toBeInstanceOf(BackendAuthError);
   });
 });
+
+describe("BackendClient.activateSession", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("posts to sessions activate with telegram chat id", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: async () => ({ session_id: "sess-1", status: "running" }),
+      }),
+    );
+
+    const client = new BackendClient(config, logger);
+    await client.activateSession("sess-1", 4242);
+
+    expect(fetch).toHaveBeenCalledOnce();
+    const call = vi.mocked(fetch).mock.calls[0];
+    expect(String(call[0])).toContain("/sessions/sess-1/activate?telegram_chat_id=4242");
+    expect((call[1] as RequestInit).method).toBe("POST");
+  });
+});
