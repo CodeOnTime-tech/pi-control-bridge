@@ -6,6 +6,8 @@ import type { TelegramLinkResponse } from "../shared/telegram.ts";
 const connectTelegramCopy = {
   ru: {
     title: "Подключение Telegram",
+    alreadyConnectedTitle: "Telegram уже подключён",
+    alreadyConnectedAccount: (username: string) => `Аккаунт: ${username}`,
     openLink: "Откройте ссылку в Telegram:",
     openBot: "Откройте бота в Telegram:",
     sendCommand: (token: string) => `Отправьте команду: /start ${token}`,
@@ -16,6 +18,8 @@ const connectTelegramCopy = {
   },
   en: {
     title: "Connect Telegram",
+    alreadyConnectedTitle: "Telegram already connected",
+    alreadyConnectedAccount: (username: string) => `Account: ${username}`,
     openLink: "Open this link in Telegram:",
     openBot: "Open the bot in Telegram:",
     sendCommand: (token: string) => `Send the command: /start ${token}`,
@@ -83,6 +87,23 @@ export function formatConnectTelegramMessage(
 ): string {
   const locale = options.locale ?? getSystemLocale();
   const copy = connectTelegramCopy[locale];
+
+  if (link.alreadyLinked) {
+    const lines = [ansi.title(copy.alreadyConnectedTitle), ""];
+    if (link.telegramUsername) {
+      lines.push(ansi.label(copy.alreadyConnectedAccount(link.telegramUsername)), "");
+    }
+
+    const botUrl =
+      link.botLink ??
+      (link.botUsername ? `https://t.me/${link.botUsername.replace(/^@/, "")}` : undefined);
+    if (botUrl) {
+      lines.push(ansi.label(copy.openBot), ansi.link(botUrl));
+    }
+
+    return lines.join("\n");
+  }
+
   const lines = [ansi.title(copy.title), ""];
 
   if (link.botLink) {

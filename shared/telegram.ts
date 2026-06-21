@@ -3,6 +3,8 @@ export interface TelegramLinkResponse {
   expiresAt: string;
   botUsername?: string;
   botLink?: string;
+  alreadyLinked?: boolean;
+  telegramUsername?: string;
 }
 
 export interface HubTelegramConnection {
@@ -29,9 +31,26 @@ export function buildTelegramBotLink(botUsername: string, token?: string): strin
   return `${base}?start=${encodeURIComponent(token)}`;
 }
 
+export function buildAlreadyLinkedTelegramResponse(connection: HubConnectionInfo): TelegramLinkResponse {
+  return {
+    token: "",
+    expiresAt: "",
+    alreadyLinked: true,
+    botUsername: connection.bot.username,
+    botLink: connection.bot.link,
+    telegramUsername: connection.telegram.username,
+  };
+}
+
 export function parseTelegramLinkResponse(raw: Record<string, unknown>): TelegramLinkResponse {
+  const alreadyLinked = raw.already_linked === true || raw.alreadyLinked === true;
   const token = String(raw.token ?? "");
   const expiresAt = String(raw.expires_at ?? raw.expiresAt ?? "");
+  const telegramUsernameRaw = raw.telegram_username ?? raw.telegramUsername;
+  const telegramUsername =
+    typeof telegramUsernameRaw === "string" && telegramUsernameRaw.length > 0
+      ? telegramUsernameRaw
+      : undefined;
   const botUsernameRaw = raw.bot_username ?? raw.botUsername;
   const botUsername =
     typeof botUsernameRaw === "string" && botUsernameRaw.length > 0
@@ -45,7 +64,7 @@ export function parseTelegramLinkResponse(raw: Record<string, unknown>): Telegra
         ? buildTelegramBotLink(botUsername, token)
         : undefined;
 
-  return { token, expiresAt, botUsername, botLink };
+  return { token, expiresAt, botUsername, botLink, alreadyLinked, telegramUsername };
 }
 
 function readTelegramBlock(raw: Record<string, unknown>): Record<string, unknown> | undefined {

@@ -18,9 +18,10 @@ function createDeps(registry: SessionRegistry, eventSender: EventSender) {
     eventSender,
     logger,
     ipcPort: 9473,
-    getDeviceState: () => null,
+    getDeviceState: () => null as import("../../shared/types.ts").DeviceState | null,
     ensureHubDeviceRegistered: vi.fn(),
     syncPendingSessions: vi.fn(),
+    markTelegramLinked: vi.fn(),
   };
 }
 
@@ -84,5 +85,50 @@ describe("createIpcApp", () => {
     expect(pending).toHaveLength(1);
     expect(pending[0]?.status).toBe("waiting_user");
     expect(deps.ensureHubDeviceRegistered).not.toHaveBeenCalled();
+  });
+
+  it("returns bot link without new token when telegram is already linked", async () => {
+    const registry = new SessionRegistry();
+    const eventSender = { send: vi.fn(), enqueue: vi.fn(), pendingEventsCount: () => 0 } as unknown as EventSender;
+    const markTelegramLinked = vi.fn();
+    const createLinkToken = vi.fn();
+    const deps = createDeps(registry, eventSender);
+    deps.getDeviceState = () => ({
+      deviceId: "device-1",
+      deviceToken: "token-1",
+      fingerprint: "fp-1",
+      hubUrl: "http://127.0.0.1:8000",
+      telegramLinked: true,
+    });
+    deps.backend.getConnectionInfo = vi.fn().mockResolvedValue({
+      deviceId: "device-1",
+      telegram: { linked: true, username: "@alice" },
+      bot: { username: "PiControlBot", link: "https://t.me/PiControlBot" },
+    });
+    deps.backend.createLinkToken = createLinkToken;
+    deps.ensureHubDeviceRegistered = vi.fn().mockResolvedValue({
+      deviceId: "device-1",
+      deviceToken: "token-1",
+      fingerprint: "fp-1",
+      hubUrl: "http://127.0.0.1:8000",
+    });
+    deps.markTelegramLinked = markTelegramLinked;
+    const app = createIpcApp(deps);
+
+    const response = await app.request("http://127.0.0.1/telegram/link-token", {
+      method: "POST",
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      alreadyLinked: boolean;
+      botLink?: string;
+      telegramUsername?: string;
+    };
+    expect(body.alreadyLinked).toBe(true);
+    expect(body.botLink).toBe("https://t.me/PiControlBot");
+    expect(body.telegramUsername).toBe("@alice");
+    expect(createLinkToken).not.toHaveBeenCalled();
+    expect(markTelegramLinked).toHaveBeenCalledWith(true);
   });
 });

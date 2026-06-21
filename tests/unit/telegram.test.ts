@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildAlreadyLinkedTelegramResponse,
   buildTelegramBotLink,
   parseHubConnectionInfo,
   parseTelegramLinkResponse,
@@ -34,6 +35,16 @@ describe("telegram helpers", () => {
     expect(parsed.telegram.linked).toBe(true);
     expect(parsed.telegram.username).toBe("@alice");
     expect(parsed.bot.link).toBe("https://t.me/PiControlBot");
+  });
+
+  it("builds already linked telegram response", () => {
+    const response = buildAlreadyLinkedTelegramResponse({
+      telegram: { linked: true, username: "@alice" },
+      bot: { username: "PiControlBot", link: "https://t.me/PiControlBot" },
+    });
+    expect(response.alreadyLinked).toBe(true);
+    expect(response.botLink).toBe("https://t.me/PiControlBot");
+    expect(response.telegramUsername).toBe("@alice");
   });
 });
 

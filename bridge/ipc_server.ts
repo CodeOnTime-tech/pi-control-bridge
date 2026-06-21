@@ -6,6 +6,7 @@ import { serve } from "@hono/node-server";
 import { IPC_COMMAND_WAIT_TIMEOUT_MS, PACKAGE_VERSION } from "../shared/constants.ts";
 import { shouldProbeTelegramLink } from "../shared/device_state.ts";
 import type { Logger } from "../shared/logger.ts";
+import { buildAlreadyLinkedTelegramResponse } from "../shared/telegram.ts";
 import type {
   BridgeStatus,
   ControlStatus,
@@ -30,6 +31,7 @@ export interface IpcServerDeps {
   onSessionRegistered?: () => void;
   scheduleShutdownIfIdle?: () => boolean;
   markTelegramBindPending?: () => void;
+  markTelegramLinked?: (linked: boolean) => void;
   onShutdown?: () => void;
 }
 
@@ -140,6 +142,20 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
   app.post("/telegram/link-token", async (c) => {
     try {
       const state = await deps.ensureHubDeviceRegistered();
+      try {
+        const connection = await deps.backend.getConnectionInfo(state.deviceToken);
+        if (connection.telegram.linked) {
+          deps.markTelegramLinked?.(true);
+          return c.json(buildAlreadyLinkedTelegramResponse(connection));
+        }
+      } catch (error) {
+        if (error instanceof BackendAuthError) {
+          deps.logger.error("Telegram link token request failed", { error: String(error) });
+          return c.json({ error: String(error) }, 502);
+        }
+        throw error;
+      }
+
       deps.markTelegramBindPending?.();
       const result = await deps.backend.createLinkToken(state.deviceToken);
       return c.json(result);

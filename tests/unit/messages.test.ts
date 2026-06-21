@@ -86,6 +86,26 @@ describe("formatConnectTelegramMessage", () => {
     expect(plain).toContain("Open this link in Telegram:");
     expect(plain).toMatch(/Valid for 5 minutes, until /);
   });
+
+  it("uses Russian copy when telegram is already connected", () => {
+    const message = formatConnectTelegramMessage(
+      {
+        token: "",
+        expiresAt: "",
+        alreadyLinked: true,
+        telegramUsername: "@alice",
+        botLink: "https://t.me/PiControlBot",
+      },
+      { locale: "ru" },
+    );
+
+    const plain = stripAnsi(message);
+    expect(plain).toContain("Telegram уже подключён");
+    expect(plain).toContain("Аккаунт: @alice");
+    expect(plain).toContain("Откройте бота в Telegram:");
+    expect(plain).toContain("https://t.me/PiControlBot");
+    expect(plain).not.toContain("/start");
+  });
 });
 
 describe("getSystemLocale", () => {

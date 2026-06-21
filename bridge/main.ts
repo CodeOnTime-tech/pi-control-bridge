@@ -58,6 +58,7 @@ export class BridgeRuntime {
       onSessionRegistered: () => this.cancelScheduledShutdown(),
       scheduleShutdownIfIdle: () => this.scheduleShutdownIfIdle(),
       markTelegramBindPending: () => this.markTelegramBindPending(),
+      markTelegramLinked: (linked: boolean) => this.markTelegramLinked(linked),
       onShutdown: () => {
         setImmediate(() => {
           this.logger.info("Shutdown requested");
