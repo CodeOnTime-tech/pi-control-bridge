@@ -1,19 +1,11 @@
-import {
-  COMMAND_RETRY_ATTEMPTS,
-  COMMAND_RETRY_DELAY_MS,
-} from "../shared/constants.ts";
 import type { Logger } from "../shared/logger.ts";
 import type { PendingCommand } from "../shared/types.ts";
 import type { BackendClient, HubCommand } from "./backend_client.ts";
 import type { SessionRegistry } from "./registry.ts";
 
-interface HeldCommand {
-  command: HubCommand;
-  attempts: number;
-}
-
 export class CommandDispatcher {
-  private readonly held = new Map<string, HeldCommand>();
+  /** Commands already enqueued locally — ack hub without re-enqueue on redelivery. */
+  private readonly enqueuedCommandIds = new Set<string>();
 
   constructor(
     private readonly registry: SessionRegistry,
@@ -23,6 +15,11 @@ export class CommandDispatcher {
   ) {}
 
   async dispatch(command: HubCommand): Promise<void> {
+    if (this.enqueuedCommandIds.has(command.command_id)) {
+      await this.ack(command.command_id);
+      return;
+    }
+
     const localId = this.registry.getLocalIdByHubSessionId(command.session_id);
     const pending: PendingCommand = {
       commandId: command.command_id,
@@ -33,24 +30,10 @@ export class CommandDispatcher {
     };
 
     if (!localId) {
-      const held = this.held.get(command.command_id) ?? {
-        command,
-        attempts: 0,
-      };
-      held.attempts += 1;
-      this.held.set(command.command_id, held);
-      this.logger.warn("Command session not found locally, holding", {
+      this.logger.warn("Command session not found locally, will retry on next poll", {
         commandId: command.command_id,
         hubSessionId: command.session_id,
-        attempts: held.attempts,
       });
-      if (held.attempts >= COMMAND_RETRY_ATTEMPTS) {
-        this.logger.error("Command dropped after retries", {
-          commandId: command.command_id,
-        });
-        this.held.delete(command.command_id);
-        await this.ack(command.command_id);
-      }
       return;
     }
 
@@ -63,20 +46,12 @@ export class CommandDispatcher {
       return;
     }
 
+    this.enqueuedCommandIds.add(command.command_id);
     await this.ack(command.command_id);
-    this.held.delete(command.command_id);
   }
 
   retryHeldCommands(): void {
-    for (const [commandId, held] of [...this.held.entries()]) {
-      const localId = this.registry.getLocalIdByHubSessionId(held.command.session_id);
-      if (!localId) continue;
-      void this.dispatch(held.command).finally(() => {
-        if (this.held.has(commandId)) {
-          setTimeout(() => this.retryHeldCommands(), COMMAND_RETRY_DELAY_MS);
-        }
-      });
-    }
+    // Hub redelivers undelivered / unacked commands on the next poll.
   }
 
   private async ack(commandId: string): Promise<void> {

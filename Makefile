@@ -35,7 +35,5 @@ publish: build ## Publish npm package
 
 release: check test version publish
 
-install-local: build ## Build and register this repo in the local Pi agent
-	@echo "Removing stale dist/bridge/main.js entry (if any)..."
-	-pi uninstall $(CURDIR)/dist/bridge/main.js
+install-local: stop build ## Build and register this repo in the local Pi agent
 	pi install $(CURDIR)

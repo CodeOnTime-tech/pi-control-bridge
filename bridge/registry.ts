@@ -10,6 +10,11 @@ export class SessionRegistry {
   >();
 
   register(session: LocalSessionRecord): void {
+    const existing = this.sessions.get(session.localId);
+    if (existing && !existing.hubPending && session.hubPending) {
+      session.hubSessionId = existing.hubSessionId;
+      session.hubPending = false;
+    }
     this.sessions.set(session.localId, session);
     if (!session.hubPending) {
       this.hubToLocal.set(session.hubSessionId, session.localId);

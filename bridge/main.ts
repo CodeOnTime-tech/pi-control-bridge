@@ -15,6 +15,7 @@ import { SessionRegistry } from "./registry.ts";
 export class BridgeRuntime {
   private deviceState: DeviceState | null = null;
   private eventSender?: EventSender;
+  private commandDispatcher?: CommandDispatcher;
   private stopHeartbeat?: () => void;
   private stopPoller?: () => void;
   private ipcClose?: () => void;
@@ -45,6 +46,7 @@ export class BridgeRuntime {
       this.logger,
       () => this.deviceState?.deviceToken,
     );
+    this.commandDispatcher = dispatcher;
 
     const ipc = startIpcServer({
       registry: this.registry,
@@ -266,6 +268,7 @@ export class BridgeRuntime {
           status: session.status ?? "running",
         });
         this.registry.markHubSynced(session.localId, result.sessionId);
+        this.commandDispatcher?.retryHeldCommands();
         this.logger.info("Pending session synced to hub", {
           localId: session.localId,
           hubSessionId: result.sessionId,

@@ -124,6 +124,12 @@ async function handleSessionStart(pi: ExtensionAPI, ctx: ExtensionContext): Prom
   }
 
   const localId = ctx.sessionManager.getSessionId();
+  const existing = sessions.get(localId);
+  if (existing) {
+    existing.consumerAbort.abort();
+    sessions.delete(localId);
+  }
+
   const consumerAbort = new AbortController();
   const status = sessionStatusFromContext(ctx);
 
