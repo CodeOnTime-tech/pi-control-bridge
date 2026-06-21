@@ -1,5 +1,5 @@
 import { ipcBaseUrl, loadBridgeConfig } from "../shared/config.ts";
-import { clearDeviceCredentials, shouldProbeTelegramLink } from "../shared/device_state.ts";
+import { clearDeviceCredentials, isDeviceRegisteredOnHub, shouldProbeTelegramLink } from "../shared/device_state.ts";
 import { Logger } from "../shared/logger.ts";
 import type { DeviceState } from "../shared/types.ts";
 import { BackendAuthError, BackendClient } from "./backend_client.ts";
@@ -99,7 +99,6 @@ export class BridgeRuntime {
       shouldProbeTelegram,
       async () => {
         this.markTelegramLinked(true);
-        await this.ensureHubDeviceRegistered();
         await this.syncPendingSessions();
       },
       onAuthFailure,
@@ -190,6 +189,19 @@ export class BridgeRuntime {
   private async registerHubDevice(): Promise<DeviceState> {
     const fingerprint = computeDeviceFingerprint();
     const saved = this.stateStore.load();
+
+    if (isDeviceRegisteredOnHub(this.deviceState, fingerprint, this.config.hubUrl)) {
+      return this.deviceState!;
+    }
+    if (isDeviceRegisteredOnHub(saved, fingerprint, this.config.hubUrl)) {
+      this.deviceState = {
+        ...saved!,
+        fingerprint,
+        hubUrl: this.config.hubUrl,
+      };
+      return this.deviceState;
+    }
+
     const existingToken = this.deviceState?.deviceToken ?? saved?.deviceToken;
 
     let result;

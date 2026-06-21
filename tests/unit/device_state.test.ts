@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   clearDeviceCredentials,
+  isDeviceRegisteredOnHub,
   shouldProbeTelegramLink,
 } from "../../shared/device_state.ts";
 import type { DeviceState } from "../../shared/types.ts";
@@ -40,5 +41,17 @@ describe("clearDeviceCredentials", () => {
     expect(cleared.deviceId).toBe("");
     expect(cleared.telegramBindPending).toBe(false);
     expect(cleared.telegramLinked).toBe(false);
+  });
+});
+
+describe("isDeviceRegisteredOnHub", () => {
+  it("returns true when credentials match current fingerprint and hub", () => {
+    expect(isDeviceRegisteredOnHub(baseState, "fp-1", "http://127.0.0.1:8000")).toBe(true);
+  });
+
+  it("returns false when fingerprint or hub differs", () => {
+    expect(isDeviceRegisteredOnHub(baseState, "fp-2", "http://127.0.0.1:8000")).toBe(false);
+    expect(isDeviceRegisteredOnHub(baseState, "fp-1", "http://example.com")).toBe(false);
+    expect(isDeviceRegisteredOnHub(null, "fp-1", "http://127.0.0.1:8000")).toBe(false);
   });
 });

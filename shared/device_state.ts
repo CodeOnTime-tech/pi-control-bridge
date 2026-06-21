@@ -10,6 +10,19 @@ export function hasDeviceCredentials(state: DeviceState | null | undefined): boo
   return Boolean(state?.deviceToken);
 }
 
+export function isDeviceRegisteredOnHub(
+  state: DeviceState | null | undefined,
+  fingerprint: string,
+  hubUrl: string,
+): boolean {
+  return Boolean(
+    state?.deviceId &&
+      state.deviceToken &&
+      state.fingerprint === fingerprint &&
+      state.hubUrl === hubUrl,
+  );
+}
+
 export function clearDeviceCredentials(state: DeviceState): DeviceState {
   return {
     ...state,
