@@ -123,16 +123,10 @@ export function startPollerLoop(
         return;
       }
 
-      const active = hasActiveSessions();
       const hasPendingEvents = eventSender.pendingEventsCount() > 0;
-      if (!active && !hasPendingEvents) return;
 
       try {
         diagnostics?.markPollStarted();
-        if (hasPendingEvents) {
-          await eventSender.flushRetryQueue();
-        }
-        if (!active) return;
 
         const commands = await backend.getNextCommands(state.deviceId, state.deviceToken);
         if (commands.length > 0) {
@@ -142,6 +136,10 @@ export function startPollerLoop(
           await dispatcher.dispatch(command);
         }
         await dispatcher.retryHeldCommands();
+
+        if (hasPendingEvents) {
+          await eventSender.flushRetryQueue();
+        }
       } catch (error) {
         diagnostics?.markPollFailed(String(error));
         logger.warn("Command polling failed", {

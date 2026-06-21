@@ -175,6 +175,10 @@ export class BridgeRuntime {
         this.handleInvalidDeviceToken();
         return;
       }
+      if (this.deviceState.telegramLinked === true) {
+        this.logger.warn("Hub init on start failed — will retry on poll", { error: String(error) });
+        return;
+      }
       throw error;
     }
   }

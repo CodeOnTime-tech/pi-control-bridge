@@ -4,6 +4,11 @@ import { shouldProbeTelegramLink } from "../shared/device_state.ts";
 import type { Logger } from "../shared/logger.ts";
 import type { DeviceState, SessionEventPayload } from "../shared/types.ts";
 
+function isPermanentEventFailure(error: unknown): boolean {
+  const text = String(error);
+  return text.includes(" 401 ") || text.includes(" 404 ");
+}
+
 export class EventSender {
   private pendingCount = 0;
 
@@ -114,10 +119,26 @@ export class EventSender {
           event_id: item.event.eventId,
         });
         this.pendingCount = Math.max(0, this.pendingCount - 1);
-      } catch {
+      } catch (error) {
+        if (isPermanentEventFailure(error)) {
+          this.pendingCount = Math.max(0, this.pendingCount - 1);
+          this.logger.warn("Dropping queued session event", {
+            externalSessionId: item.externalSessionId,
+            eventId: item.event.eventId,
+            error: String(error),
+          });
+          continue;
+        }
         item.attempts += 1;
         if (item.attempts < 5) {
           remaining.push(item);
+        } else {
+          this.pendingCount = Math.max(0, this.pendingCount - 1);
+          this.logger.warn("Dropping queued session event after max attempts", {
+            externalSessionId: item.externalSessionId,
+            eventId: item.event.eventId,
+            error: String(error),
+          });
         }
       }
     }

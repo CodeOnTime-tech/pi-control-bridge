@@ -9,5 +9,6 @@ export const DEFAULT_IPC_PORT = 9473;
 export const PROJECT_CONFIG_RELATIVE_PATH = ".pi/bridge.json";
 
 export const IPC_COMMAND_WAIT_TIMEOUT_MS = 30_000;
+export const BACKEND_REQUEST_TIMEOUT_MS = 15_000;
 export const COMMAND_RETRY_ATTEMPTS = 3;
 export const COMMAND_RETRY_DELAY_MS = 2_000;

@@ -109,7 +109,7 @@ describe("bridge loops", () => {
     stop();
   });
 
-  it("skips command polling when there are no sessions and no pending events", async () => {
+  it("polls commands even without active sessions when telegram is linked", async () => {
     const backend = {
       getNextCommands: vi.fn().mockResolvedValue([]),
       isTelegramLinked: vi.fn().mockResolvedValue(true),
@@ -120,7 +120,7 @@ describe("bridge loops", () => {
     } as unknown as EventSender;
     const dispatcher = {
       dispatch: vi.fn(),
-      retryHeldCommands: vi.fn(),
+      retryHeldCommands: vi.fn().mockResolvedValue(undefined),
     } as unknown as CommandDispatcher;
 
     const stop = startPollerLoop(
@@ -136,12 +136,13 @@ describe("bridge loops", () => {
 
     await vi.runOnlyPendingTimersAsync();
     expect(eventSender.flushRetryQueue).not.toHaveBeenCalled();
-    expect(backend.getNextCommands).not.toHaveBeenCalled();
+    expect(backend.getNextCommands).toHaveBeenCalledWith("device-1", "token-1");
+    expect(dispatcher.retryHeldCommands).toHaveBeenCalled();
 
     stop();
   });
 
-  it("flushes pending events even without active sessions", async () => {
+  it("flushes pending events after polling commands", async () => {
     const backend = {
       getNextCommands: vi.fn().mockResolvedValue([]),
       isTelegramLinked: vi.fn().mockResolvedValue(true),
@@ -167,8 +168,49 @@ describe("bridge loops", () => {
     );
 
     await vi.runOnlyPendingTimersAsync();
+    expect(backend.getNextCommands).toHaveBeenCalledWith("device-1", "token-1");
     expect(eventSender.flushRetryQueue).toHaveBeenCalled();
-    expect(backend.getNextCommands).not.toHaveBeenCalled();
+
+    stop();
+  });
+
+  it("polls commands before flushing pending events when flush hangs", async () => {
+    const backend = {
+      getNextCommands: vi.fn().mockResolvedValue([
+        {
+          command_id: "cmd-1",
+          session_id: "hub-1",
+          kind: "prompt",
+          payload: { text: "hello" },
+        },
+      ]),
+      isTelegramLinked: vi.fn().mockResolvedValue(true),
+    } as unknown as BackendClient;
+    const flushRetryQueue = vi.fn(() => new Promise<void>(() => {}));
+    const eventSender = {
+      pendingEventsCount: vi.fn().mockReturnValue(1),
+      flushRetryQueue,
+    } as unknown as EventSender;
+    const dispatcher = {
+      dispatch: vi.fn().mockResolvedValue(undefined),
+      retryHeldCommands: vi.fn().mockResolvedValue(undefined),
+    } as unknown as CommandDispatcher;
+
+    const stop = startPollerLoop(
+      config,
+      backend,
+      dispatcher,
+      eventSender,
+      logger,
+      () => deviceState,
+      () => false,
+      () => true,
+    );
+
+    await vi.runOnlyPendingTimersAsync();
+    expect(backend.getNextCommands).toHaveBeenCalledWith("device-1", "token-1");
+    expect(dispatcher.dispatch).toHaveBeenCalledOnce();
+    expect(flushRetryQueue).toHaveBeenCalled();
 
     stop();
   });

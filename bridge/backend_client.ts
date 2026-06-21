@@ -7,6 +7,7 @@ import {
   type HubConnectionInfo,
   type TelegramLinkResponse,
 } from "../shared/telegram.ts";
+import { BACKEND_REQUEST_TIMEOUT_MS } from "../shared/constants.ts";
 import type { BridgeConfig, DeviceState } from "../shared/types.ts";
 
 /** Cache TTL when Telegram is already linked (stable state). */
@@ -90,6 +91,7 @@ export class BackendClient {
         method,
         headers: { "Content-Type": "application/json" },
         body: options?.body ? JSON.stringify(options.body) : undefined,
+        signal: AbortSignal.timeout(BACKEND_REQUEST_TIMEOUT_MS),
       });
       this.degraded = false;
     } catch (error) {
