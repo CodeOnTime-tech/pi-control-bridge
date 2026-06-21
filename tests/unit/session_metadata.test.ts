@@ -5,6 +5,7 @@ import {
   extractFirstUserPrompt,
   extractLatestAssistantResponseFromMessages,
   extractLatestUserPromptFromMessages,
+  extractLatestUserPromptFromSession,
 } from "../../extension/session_metadata.ts";
 
 describe("session_metadata", () => {
@@ -33,6 +34,42 @@ describe("session_metadata", () => {
       projectBasename: "pi-control-bridge",
       mode: "tui",
     });
+  });
+
+  it("returns latest user prompt from session entries", () => {
+    const ctx = {
+      sessionManager: {
+        getEntries: () => [
+          { type: "message", message: { role: "user", content: "first prompt" } },
+          { type: "message", message: { role: "assistant", content: "working" } },
+          { type: "message", message: { role: "user", content: "second prompt" } },
+        ],
+      },
+    };
+
+    expect(extractLatestUserPromptFromSession(ctx as never)).toBe("second prompt");
+  });
+
+  it("returns undefined for empty session entries", () => {
+    const ctx = {
+      sessionManager: {
+        getEntries: () => [],
+      },
+    };
+
+    expect(extractLatestUserPromptFromSession(ctx as never)).toBeUndefined();
+  });
+
+  it("returns undefined when session has only assistant messages", () => {
+    const ctx = {
+      sessionManager: {
+        getEntries: () => [
+          { type: "message", message: { role: "assistant", content: "hello" } },
+        ],
+      },
+    };
+
+    expect(extractLatestUserPromptFromSession(ctx as never)).toBeUndefined();
   });
 
   it("extractFirstUserPrompt reads session entries", () => {

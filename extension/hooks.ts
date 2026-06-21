@@ -16,7 +16,11 @@ import {
 import { executeCommand } from "./command_handler.ts";
 import { ensureBridge, setBridgeConfigCwd } from "./ensure_bridge.ts";
 import { formatConnectTelegramMessage, formatControlStatusMessage } from "./messages.ts";
-import { buildSessionMetadata, extractLatestAssistantResponseFromMessages } from "./session_metadata.ts";
+import { clearPendingUserPrompt, setPendingUserPrompt, takePendingUserPrompt } from "./pending_user_prompt.ts";
+import {
+  buildSessionMetadata,
+  extractLatestAssistantResponseFromMessages,
+} from "./session_metadata.ts";
 import { sessionStatusAfterAgentEnd, sessionStatusFromContext } from "./session_status.ts";
 
 interface SessionBinding {
@@ -221,6 +225,7 @@ async function handleSessionShutdown(ctx: ExtensionContext): Promise<void> {
         }),
       );
     }
+    clearPendingUserPrompt(localId);
   }
 
   if (sessions.size > 0) return;
@@ -264,8 +269,14 @@ export function registerHooks(pi: ExtensionAPI): void {
     }),
   );
 
+  pi.on("before_agent_start", (event, ctx) => {
+    setPendingUserPrompt(ctx.sessionManager.getSessionId(), event.prompt);
+  });
+
   pi.on("agent_start", (_event, ctx) => {
-    void postEvent(ctx.sessionManager.getSessionId(), "agent_start", "running");
+    const localId = ctx.sessionManager.getSessionId();
+    const userPrompt = takePendingUserPrompt(localId);
+    void postEvent(localId, "agent_start", "running", userPrompt ? { userPrompt } : undefined);
   });
 
   pi.on("tool_execution_start", (event, ctx) => {

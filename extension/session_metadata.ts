@@ -61,6 +61,17 @@ export function extractFirstUserPrompt(ctx: ExtensionContext): string | undefine
   return undefined;
 }
 
+export function extractLatestUserPromptFromSession(ctx: ExtensionContext): string | undefined {
+  const entries = ctx.sessionManager.getEntries();
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (entry.type !== "message") continue;
+    const text = extractUserMessageText(entry.message);
+    if (text) return text.trim();
+  }
+  return undefined;
+}
+
 export function extractLatestUserPromptFromMessages(messages: unknown[]): string | undefined {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const text = extractUserMessageText(messages[index]);
