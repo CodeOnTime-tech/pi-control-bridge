@@ -1,6 +1,6 @@
 {
   "name": "pi-control-bridge",
-  "version": "0.3.10",
+  "version": "0.3.11",
   "description": "Pi agent bridge extension and singleton runtime for pi-control-hub integration.",
   "keywords": [
     "pi-package",
