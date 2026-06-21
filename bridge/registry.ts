@@ -69,8 +69,20 @@ export class SessionRegistry {
   enqueueCommand(localId: string, command: PendingCommand): boolean {
     const queue = this.commandQueues.get(localId);
     if (!queue) return false;
+
+    const waiters = this.commandWaiters.get(localId);
+    if (waiters?.length) {
+      const resolve = waiters.shift()!;
+      if (waiters.length === 0) {
+        this.commandWaiters.delete(localId);
+      } else {
+        this.commandWaiters.set(localId, waiters);
+      }
+      resolve(command);
+      return true;
+    }
+
     queue.push(command);
-    this.resolveWaiters(localId, command);
     return true;
   }
 

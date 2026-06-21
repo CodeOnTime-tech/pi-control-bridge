@@ -145,6 +145,36 @@ describe("SessionRegistry", () => {
     expect(command?.commandId).toBe("cmd-1");
   });
 
+  it("does not duplicate command when consumer is already waiting", async () => {
+    const registry = new SessionRegistry();
+    registry.register({
+      localId: "local-1",
+      externalSessionId: "ext-1",
+      hubSessionId: "hub-1",
+      cwd: "/tmp",
+      pid: 1,
+      mode: "tui",
+      registeredAt: new Date().toISOString(),
+    });
+
+    const pending = {
+      commandId: "cmd-dup",
+      hubSessionId: "hub-1",
+      kind: "prompt",
+      payload: { text: "hello" },
+      queuedAt: new Date().toISOString(),
+    };
+
+    const first = registry.waitForCommand("local-1", 100);
+    expect(registry.enqueueCommand("local-1", pending)).toBe(true);
+
+    const command = await first;
+    expect(command?.commandId).toBe("cmd-dup");
+
+    const second = await registry.waitForCommand("local-1", 10);
+    expect(second).toBeNull();
+  });
+
   it("maps hub session id to local id", () => {
     const registry = new SessionRegistry();
     registry.register({
