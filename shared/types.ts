@@ -28,6 +28,10 @@ export interface DeviceState {
   hubUrl: string;
   lastRegisterAt?: string;
   lastHeartbeatAt?: string;
+  /** User started /connect-telegram; poll hub until Telegram is linked. */
+  telegramBindPending?: boolean;
+  /** Last known Telegram link state from a successful GET /me. */
+  telegramLinked?: boolean;
 }
 
 export interface LocalSessionRecord {

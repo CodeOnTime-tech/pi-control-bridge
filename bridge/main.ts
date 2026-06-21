@@ -1,7 +1,8 @@
 import { ipcBaseUrl, loadBridgeConfig } from "../shared/config.ts";
+import { clearDeviceCredentials, shouldProbeTelegramLink } from "../shared/device_state.ts";
 import { Logger } from "../shared/logger.ts";
 import type { DeviceState } from "../shared/types.ts";
-import { BackendClient } from "./backend_client.ts";
+import { BackendAuthError, BackendClient } from "./backend_client.ts";
 import { CommandDispatcher } from "./command_dispatcher.ts";
 import { DeviceStateStore } from "./device_state_store.ts";
 import { EventSender } from "./event_sender.ts";
@@ -56,6 +57,7 @@ export class BridgeRuntime {
       onEmptyRegistry: () => this.scheduleShutdownIfIdle(),
       onSessionRegistered: () => this.cancelScheduledShutdown(),
       scheduleShutdownIfIdle: () => this.scheduleShutdownIfIdle(),
+      markTelegramBindPending: () => this.markTelegramBindPending(),
       onShutdown: () => {
         setImmediate(() => {
           this.logger.info("Shutdown requested");
@@ -67,6 +69,8 @@ export class BridgeRuntime {
     this.ipcClose = ipc.close;
 
     const hasActiveSessions = () => this.registry.size() > 0;
+    const shouldProbeTelegram = (state: DeviceState) => shouldProbeTelegramLink(state);
+    const onAuthFailure = () => this.handleInvalidDeviceToken();
 
     this.stopHeartbeat = startHeartbeatLoop(
       this.config,
@@ -78,6 +82,8 @@ export class BridgeRuntime {
         this.stateStore.save(state);
       },
       hasActiveSessions,
+      shouldProbeTelegram,
+      onAuthFailure,
     );
 
     this.stopPoller = startPollerLoop(
@@ -88,10 +94,13 @@ export class BridgeRuntime {
       this.logger,
       () => this.deviceState,
       hasActiveSessions,
+      shouldProbeTelegram,
       async () => {
+        this.markTelegramLinked(true);
         await this.ensureHubDeviceRegistered();
         await this.syncPendingSessions();
       },
+      onAuthFailure,
     );
 
     this.logger.info("Bridge runtime started", {
@@ -115,14 +124,56 @@ export class BridgeRuntime {
       hubUrl: this.config.hubUrl,
     };
 
-    const linked = await this.backend.isTelegramLinked(saved.deviceToken);
-    if (!linked) {
-      this.logger.info("Telegram not linked — deferring hub device/session sync");
+    if (!shouldProbeTelegramLink(saved)) {
+      this.logger.info("Telegram not linked — deferring hub probes until connect-telegram");
       return;
     }
 
-    await this.ensureHubDeviceRegistered();
-    await this.syncPendingSessions();
+    try {
+      const linked = await this.backend.isTelegramLinked(saved.deviceToken);
+      if (linked) {
+        this.markTelegramLinked(true);
+        await this.ensureHubDeviceRegistered();
+        await this.syncPendingSessions();
+        return;
+      }
+      if (saved.telegramBindPending) {
+        this.logger.info("Telegram bind pending — waiting for user to complete /start in bot");
+        return;
+      }
+      this.logger.info("Telegram not linked — deferring hub device/session sync");
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        this.handleInvalidDeviceToken();
+        return;
+      }
+      throw error;
+    }
+  }
+
+  private markTelegramLinked(linked: boolean, bindPending = false): void {
+    if (!this.deviceState) return;
+    this.deviceState = {
+      ...this.deviceState,
+      telegramLinked: linked,
+      telegramBindPending: bindPending,
+    };
+    this.stateStore.save(this.deviceState);
+  }
+
+  markTelegramBindPending(): void {
+    if (!this.deviceState) return;
+    this.markTelegramLinked(this.deviceState.telegramLinked === true, true);
+  }
+
+  private handleInvalidDeviceToken(): void {
+    this.logger.warn("Device token rejected by hub — clearing stored credentials");
+    this.backend.invalidateTelegramLinkedCache();
+    const saved = this.stateStore.load();
+    if (saved) {
+      this.stateStore.save(clearDeviceCredentials(saved));
+    }
+    this.deviceState = null;
   }
 
   async ensureHubDeviceRegistered(): Promise<DeviceState> {
@@ -133,7 +184,6 @@ export class BridgeRuntime {
     let result;
     if (existingToken) {
       try {
-        await this.backend.validateToken(existingToken);
         result = await this.backend.registerDevice(fingerprint, existingToken);
       } catch {
         result = await this.backend.registerDevice(fingerprint);
@@ -153,8 +203,22 @@ export class BridgeRuntime {
     const state = this.deviceState;
     if (!state) return;
 
-    const linked = await this.backend.isTelegramLinked(state.deviceToken);
-    if (!linked) return;
+    if (!state.telegramLinked && !shouldProbeTelegramLink(state)) return;
+
+    let linked = state.telegramLinked === true;
+    if (!linked) {
+      try {
+        linked = await this.backend.isTelegramLinked(state.deviceToken);
+      } catch (error) {
+        if (error instanceof BackendAuthError) {
+          this.handleInvalidDeviceToken();
+          return;
+        }
+        return;
+      }
+      if (!linked) return;
+      this.markTelegramLinked(true);
+    }
 
     for (const session of this.registry.listPendingHubSync()) {
       try {

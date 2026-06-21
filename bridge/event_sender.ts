@@ -1,5 +1,6 @@
-import type { BackendClient } from "./backend_client.ts";
+import { BackendAuthError, type BackendClient } from "./backend_client.ts";
 import type { RetryQueue, QueuedEvent } from "./retry_queue.ts";
+import { shouldProbeTelegramLink } from "../shared/device_state.ts";
 import type { Logger } from "../shared/logger.ts";
 import type { DeviceState, SessionEventPayload } from "../shared/types.ts";
 
@@ -37,10 +38,26 @@ export class EventSender {
       this.logger.warn("Cannot send event without device state", { eventId: event.eventId });
       return;
     }
-    const telegramLinked = await this.backend.isTelegramLinked(state.deviceToken);
+
+    let telegramLinked = state.telegramLinked === true;
     if (!telegramLinked) {
-      await this.enqueue(externalSessionId, event);
-      return;
+      if (!shouldProbeTelegramLink(state)) {
+        await this.enqueue(externalSessionId, event);
+        return;
+      }
+      try {
+        telegramLinked = await this.backend.isTelegramLinked(state.deviceToken);
+      } catch (error) {
+        if (error instanceof BackendAuthError) {
+          await this.enqueue(externalSessionId, event);
+          return;
+        }
+        throw error;
+      }
+      if (!telegramLinked) {
+        await this.enqueue(externalSessionId, event);
+        return;
+      }
     }
 
     try {
@@ -70,8 +87,18 @@ export class EventSender {
   async flushRetryQueue(): Promise<void> {
     const state = this.getDeviceState();
     if (!state) return;
-    const telegramLinked = await this.backend.isTelegramLinked(state.deviceToken);
-    if (!telegramLinked) return;
+
+    let telegramLinked = state.telegramLinked === true;
+    if (!telegramLinked) {
+      if (!shouldProbeTelegramLink(state)) return;
+      try {
+        telegramLinked = await this.backend.isTelegramLinked(state.deviceToken);
+      } catch (error) {
+        if (error instanceof BackendAuthError) return;
+        throw error;
+      }
+      if (!telegramLinked) return;
+    }
 
     const queued = this.retryQueue.load();
     if (queued.length === 0) return;

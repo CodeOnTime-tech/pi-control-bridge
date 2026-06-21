@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { BackendClient } from "../../bridge/backend_client.ts";
+import { BackendAuthError, BackendClient } from "../../bridge/backend_client.ts";
 import type { Logger } from "../../shared/logger.ts";
 import type { BridgeConfig } from "../../shared/types.ts";
 
@@ -92,5 +92,17 @@ describe("BackendClient.isTelegramLinked cache", () => {
 
     await client.isTelegramLinked("token-1", 0);
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("throws BackendAuthError on 401", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      headers: new Headers(),
+      text: async () => "Invalid device token",
+    } as Response);
+
+    const client = new BackendClient(config, logger);
+    await expect(client.isTelegramLinked("token-1")).rejects.toBeInstanceOf(BackendAuthError);
   });
 });

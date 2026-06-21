@@ -14,6 +14,13 @@ const TELEGRAM_LINKED_CACHE_TTL_MS = 30_000;
 /** Short TTL while unlinked so bind is detected within a few seconds. */
 const TELEGRAM_UNLINKED_CACHE_TTL_MS = 2_000;
 
+export class BackendAuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BackendAuthError";
+  }
+}
+
 export interface DeviceRegisterResult {
   deviceId: string;
   deviceToken: string;
@@ -100,6 +107,9 @@ export class BackendClient {
         status: response.status,
         path,
       });
+      if (response.status === 401) {
+        throw new BackendAuthError(`Backend ${method} ${path} failed: ${response.status} ${text}`);
+      }
       throw new Error(`Backend ${method} ${path} failed: ${response.status} ${text}`);
     }
 
@@ -169,7 +179,11 @@ export class BackendClient {
       const linked = info.telegram.linked === true;
       this.telegramLinkedCache = { value: linked, checkedAt: now };
       return linked;
-    } catch {
+    } catch (error) {
+      if (error instanceof BackendAuthError) {
+        this.telegramLinkedCache = { value: false, checkedAt: now };
+        throw error;
+      }
       this.telegramLinkedCache = { value: false, checkedAt: now };
       return false;
     }
@@ -256,6 +270,8 @@ export class BackendClient {
       hubUrl: this.config.hubUrl,
       lastRegisterAt: new Date().toISOString(),
       lastHeartbeatAt: previous?.lastHeartbeatAt,
+      telegramBindPending: previous?.telegramBindPending,
+      telegramLinked: previous?.telegramLinked,
     };
   }
 }

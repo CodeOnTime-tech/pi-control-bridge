@@ -1,4 +1,4 @@
-import type { BackendClient } from "./backend_client.ts";
+import { BackendAuthError, type BackendClient } from "./backend_client.ts";
 import type { CommandDispatcher } from "./command_dispatcher.ts";
 import type { EventSender } from "./event_sender.ts";
 import type { Logger } from "../shared/logger.ts";
@@ -11,6 +11,8 @@ export function startHeartbeatLoop(
   getDeviceState: () => DeviceState | null,
   onHeartbeat: (state: DeviceState) => void,
   hasActiveSessions: () => boolean,
+  shouldProbeTelegram: (state: DeviceState) => boolean,
+  onAuthFailure?: () => void,
 ): () => void {
   let stopped = false;
 
@@ -19,8 +21,22 @@ export function startHeartbeatLoop(
     if (!hasActiveSessions()) return;
     const state = getDeviceState();
     if (!state) return;
-    const telegramLinked = await backend.isTelegramLinked(state.deviceToken);
-    if (!telegramLinked) return;
+
+    let telegramLinked = state.telegramLinked === true;
+    if (!telegramLinked) {
+      if (!shouldProbeTelegram(state)) return;
+      try {
+        telegramLinked = await backend.isTelegramLinked(state.deviceToken);
+      } catch (error) {
+        if (error instanceof BackendAuthError) {
+          onAuthFailure?.();
+          return;
+        }
+        return;
+      }
+      if (!telegramLinked) return;
+    }
+
     try {
       await backend.heartbeat(state.deviceToken);
       onHeartbeat({
@@ -50,7 +66,9 @@ export function startPollerLoop(
   logger: Logger,
   getDeviceState: () => DeviceState | null,
   hasActiveSessions: () => boolean,
+  shouldProbeTelegram: (state: DeviceState) => boolean,
   onTelegramLinked?: () => Promise<void>,
+  onAuthFailure?: () => void,
 ): () => void {
   let stopped = false;
   let previousLinked = false;
@@ -59,10 +77,28 @@ export function startPollerLoop(
     if (stopped) return;
     const state = getDeviceState();
     if (!state) return;
-    const telegramLinked = await backend.isTelegramLinked(
-      state.deviceToken,
-      previousLinked ? undefined : 0,
-    );
+
+    let telegramLinked = state.telegramLinked === true;
+    if (!telegramLinked) {
+      if (!shouldProbeTelegram(state)) {
+        previousLinked = false;
+        return;
+      }
+      try {
+        telegramLinked = await backend.isTelegramLinked(
+          state.deviceToken,
+          previousLinked ? undefined : 0,
+        );
+      } catch (error) {
+        if (error instanceof BackendAuthError) {
+          onAuthFailure?.();
+          previousLinked = false;
+          return;
+        }
+        return;
+      }
+    }
+
     if (telegramLinked && !previousLinked) {
       await onTelegramLinked?.();
     }

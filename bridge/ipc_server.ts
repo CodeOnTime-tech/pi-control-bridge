@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 
 import { IPC_COMMAND_WAIT_TIMEOUT_MS, PACKAGE_VERSION } from "../shared/constants.ts";
+import { shouldProbeTelegramLink } from "../shared/device_state.ts";
 import type { Logger } from "../shared/logger.ts";
 import type {
   BridgeStatus,
@@ -12,7 +13,7 @@ import type {
   RegisterSessionRequest,
   SessionEventPayload,
 } from "../shared/types.ts";
-import type { BackendClient } from "./backend_client.ts";
+import { BackendAuthError, type BackendClient } from "./backend_client.ts";
 import type { EventSender } from "./event_sender.ts";
 import type { SessionRegistry } from "./registry.ts";
 
@@ -28,6 +29,7 @@ export interface IpcServerDeps {
   onEmptyRegistry?: () => void;
   onSessionRegistered?: () => void;
   scheduleShutdownIfIdle?: () => boolean;
+  markTelegramBindPending?: () => void;
   onShutdown?: () => void;
 }
 
@@ -67,8 +69,32 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
       return c.json(base);
     }
 
-    const linked = await deps.backend.isTelegramLinked(state.deviceToken);
-    if (!linked) {
+    if (state.telegramLinked) {
+      void deps.syncPendingSessions();
+      try {
+        const connection = await deps.backend.getConnectionInfo(state.deviceToken);
+        return c.json({
+          ...base,
+          deviceId: connection.deviceId ?? base.deviceId,
+          telegram: connection.telegram,
+          bot: connection.bot,
+        } satisfies ControlStatus);
+      } catch (error) {
+        if (error instanceof BackendAuthError) {
+          return c.json({
+            ...base,
+            deviceId: state.deviceId ?? base.deviceId,
+            telegram: { linked: true },
+            bot: {},
+            degraded: true,
+          } satisfies ControlStatus);
+        }
+        deps.logger.warn("Connection status request failed", { error: String(error) });
+        return c.json({ ...base, degraded: true }, 502);
+      }
+    }
+
+    if (!shouldProbeTelegramLink(state)) {
       return c.json({
         ...base,
         deviceId: state.deviceId ?? base.deviceId,
@@ -77,9 +103,18 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
       } satisfies ControlStatus);
     }
 
-    void deps.syncPendingSessions();
-
     try {
+      const linked = await deps.backend.isTelegramLinked(state.deviceToken, 0);
+      if (!linked) {
+        return c.json({
+          ...base,
+          deviceId: state.deviceId ?? base.deviceId,
+          telegram: { linked: false },
+          bot: {},
+        } satisfies ControlStatus);
+      }
+
+      void deps.syncPendingSessions();
       const connection = await deps.backend.getConnectionInfo(state.deviceToken);
       return c.json({
         ...base,
@@ -88,6 +123,15 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
         bot: connection.bot,
       } satisfies ControlStatus);
     } catch (error) {
+      if (error instanceof BackendAuthError) {
+        return c.json({
+          ...base,
+          deviceId: state.deviceId ?? base.deviceId,
+          telegram: { linked: false },
+          bot: {},
+          degraded: true,
+        } satisfies ControlStatus);
+      }
       deps.logger.warn("Connection status request failed", { error: String(error) });
       return c.json({ ...base, degraded: true }, 502);
     }
@@ -96,6 +140,7 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
   app.post("/telegram/link-token", async (c) => {
     try {
       const state = await deps.ensureHubDeviceRegistered();
+      deps.markTelegramBindPending?.();
       const result = await deps.backend.createLinkToken(state.deviceToken);
       return c.json(result);
     } catch (error) {
@@ -109,8 +154,18 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
   app.post("/sessions/register", async (c) => {
     const body = (await c.req.json()) as RegisterSessionRequest;
     const state = deps.getDeviceState();
-    // Fresh check: user may have just completed /start bind in Telegram.
-    const linked = state ? await deps.backend.isTelegramLinked(state.deviceToken, 0) : false;
+    let linked = state?.telegramLinked === true;
+    if (!linked && state && shouldProbeTelegramLink(state)) {
+      try {
+        linked = await deps.backend.isTelegramLinked(state.deviceToken, 0);
+      } catch (error) {
+        if (error instanceof BackendAuthError) {
+          linked = false;
+        } else {
+          throw error;
+        }
+      }
+    }
 
     if (!linked) {
       const record = {

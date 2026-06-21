@@ -56,6 +56,7 @@ describe("bridge loops", () => {
       () => deviceState,
       vi.fn(),
       () => false,
+      () => true,
     );
 
     await vi.runOnlyPendingTimersAsync();
@@ -77,6 +78,7 @@ describe("bridge loops", () => {
       () => deviceState,
       vi.fn(),
       () => true,
+      () => true,
     );
 
     await vi.runOnlyPendingTimersAsync();
@@ -97,6 +99,7 @@ describe("bridge loops", () => {
       logger,
       () => deviceState,
       vi.fn(),
+      () => true,
       () => true,
     );
 
@@ -128,6 +131,7 @@ describe("bridge loops", () => {
       logger,
       () => deviceState,
       () => false,
+      () => true,
     );
 
     await vi.runOnlyPendingTimersAsync();
@@ -159,6 +163,7 @@ describe("bridge loops", () => {
       logger,
       () => deviceState,
       () => false,
+      () => true,
     );
 
     await vi.runOnlyPendingTimersAsync();
@@ -189,6 +194,7 @@ describe("bridge loops", () => {
       eventSender,
       logger,
       () => deviceState,
+      () => true,
       () => true,
     );
 
@@ -221,12 +227,68 @@ describe("bridge loops", () => {
       logger,
       () => deviceState,
       () => true,
+      () => true,
     );
 
     await vi.runOnlyPendingTimersAsync();
     expect(eventSender.flushRetryQueue).not.toHaveBeenCalled();
     expect(backend.getNextCommands).not.toHaveBeenCalled();
     expect(dispatcher.retryHeldCommands).not.toHaveBeenCalled();
+
+    stop();
+  });
+
+  it("skips heartbeat when telegram probe is disabled", async () => {
+    const backend = {
+      heartbeat: vi.fn().mockResolvedValue(undefined),
+      isTelegramLinked: vi.fn().mockResolvedValue(true),
+    } as unknown as BackendClient;
+
+    const stop = startHeartbeatLoop(
+      config,
+      backend,
+      logger,
+      () => deviceState,
+      vi.fn(),
+      () => true,
+      () => false,
+    );
+
+    await vi.runOnlyPendingTimersAsync();
+    expect(backend.isTelegramLinked).not.toHaveBeenCalled();
+    expect(backend.heartbeat).not.toHaveBeenCalled();
+
+    stop();
+  });
+
+  it("skips poller probes when telegram probe is disabled", async () => {
+    const backend = {
+      getNextCommands: vi.fn().mockResolvedValue([]),
+      isTelegramLinked: vi.fn().mockResolvedValue(true),
+    } as unknown as BackendClient;
+    const eventSender = {
+      pendingEventsCount: vi.fn().mockReturnValue(2),
+      flushRetryQueue: vi.fn().mockResolvedValue(undefined),
+    } as unknown as EventSender;
+    const dispatcher = {
+      dispatch: vi.fn(),
+      retryHeldCommands: vi.fn(),
+    } as unknown as CommandDispatcher;
+
+    const stop = startPollerLoop(
+      config,
+      backend,
+      dispatcher,
+      eventSender,
+      logger,
+      () => deviceState,
+      () => true,
+      () => false,
+    );
+
+    await vi.runOnlyPendingTimersAsync();
+    expect(backend.isTelegramLinked).not.toHaveBeenCalled();
+    expect(eventSender.flushRetryQueue).not.toHaveBeenCalled();
 
     stop();
   });
