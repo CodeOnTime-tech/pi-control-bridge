@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { executeCommand } from "../../extension/command_handler.ts";
+import { takePendingUserPrompt } from "../../extension/pending_user_prompt.ts";
 import type { PendingCommand } from "../../shared/types.ts";
 
 function makeContext(overrides?: Partial<ExtensionContext>): ExtensionContext {
@@ -10,6 +11,9 @@ function makeContext(overrides?: Partial<ExtensionContext>): ExtensionContext {
     isIdle: () => true,
     abort: vi.fn(),
     shutdown: vi.fn(),
+    sessionManager: {
+      getSessionId: () => "local-1",
+    },
     ...overrides,
   } as ExtensionContext;
 }
@@ -30,6 +34,10 @@ describe("executeCommand", () => {
 
     executeCommand(pi, ctx, command);
     expect(sendUserMessage).toHaveBeenCalledWith("hello");
+    expect(takePendingUserPrompt("local-1")).toEqual({
+      text: "hello",
+      origin: "telegram",
+    });
   });
 
   it("steers prompt when busy", () => {

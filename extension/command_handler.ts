@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
+import { setPendingUserPrompt } from "./pending_user_prompt.ts";
 import type { PendingCommand } from "../shared/types.ts";
 
 export function executeCommand(
@@ -11,6 +12,7 @@ export function executeCommand(
     case "prompt": {
       const text = String(command.payload?.text ?? "");
       if (!text) return;
+      setPendingUserPrompt(ctx.sessionManager.getSessionId(), text, "telegram");
       if (ctx.isIdle()) {
         pi.sendUserMessage(text);
       } else {

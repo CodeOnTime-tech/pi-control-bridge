@@ -16,7 +16,12 @@ import {
 import { executeCommand } from "./command_handler.ts";
 import { ensureBridge, setBridgeConfigCwd } from "./ensure_bridge.ts";
 import { formatConnectTelegramMessage, formatControlStatusMessage } from "./messages.ts";
-import { clearPendingUserPrompt, setPendingUserPrompt, takePendingUserPrompt } from "./pending_user_prompt.ts";
+import {
+  clearPendingUserPrompt,
+  peekPendingUserPrompt,
+  setPendingUserPrompt,
+  takePendingUserPrompt,
+} from "./pending_user_prompt.ts";
 import {
   buildSessionMetadata,
   extractLatestAssistantResponseFromMessages,
@@ -270,13 +275,26 @@ export function registerHooks(pi: ExtensionAPI): void {
   );
 
   pi.on("before_agent_start", (event, ctx) => {
-    setPendingUserPrompt(ctx.sessionManager.getSessionId(), event.prompt);
+    const localId = ctx.sessionManager.getSessionId();
+    if (!peekPendingUserPrompt(localId)) {
+      setPendingUserPrompt(localId, event.prompt, "local");
+    }
   });
 
   pi.on("agent_start", (_event, ctx) => {
     const localId = ctx.sessionManager.getSessionId();
-    const userPrompt = takePendingUserPrompt(localId);
-    void postEvent(localId, "agent_start", "running", userPrompt ? { userPrompt } : undefined);
+    const pending = peekPendingUserPrompt(localId);
+    void postEvent(
+      localId,
+      "agent_start",
+      "running",
+      pending
+        ? {
+            userPrompt: pending.text,
+            promptOrigin: pending.origin,
+          }
+        : undefined,
+    );
   });
 
   pi.on("tool_execution_start", (event, ctx) => {
@@ -294,8 +312,17 @@ export function registerHooks(pi: ExtensionAPI): void {
   pi.on("agent_end", (event, ctx) => {
     const localId = ctx.sessionManager.getSessionId();
     const status = sessionStatusAfterAgentEnd(ctx);
+    const pending = takePendingUserPrompt(localId);
     const lastResult = extractLatestAssistantResponseFromMessages(event.messages);
-    void postEvent(localId, "agent_end", status, lastResult ? { lastResult } : undefined);
+    const payload: Record<string, unknown> = {};
+    if (pending) {
+      payload.userPrompt = pending.text;
+      payload.promptOrigin = pending.origin;
+    }
+    if (lastResult) {
+      payload.lastResult = lastResult;
+    }
+    void postEvent(localId, "agent_end", status, Object.keys(payload).length > 0 ? payload : undefined);
     void postSessionMetadata(pi, ctx, localId, { messages: event.messages });
   });
 
