@@ -15,6 +15,7 @@ import {
 } from "./bridge_client.ts";
 import { executeCommand } from "./command_handler.ts";
 import { ensureBridge, setBridgeConfigCwd } from "./ensure_bridge.ts";
+import { stripAnsi } from "../shared/ansi.ts";
 import { formatConnectTelegramMessage, formatControlStatusMessage } from "./messages.ts";
 import {
   clearPendingUserPrompt,
@@ -24,8 +25,11 @@ import {
 } from "./pending_user_prompt.ts";
 import {
   buildSessionMetadata,
-  extractLatestAssistantResponseFromMessages,
+  extractAssistantMessageText,
+  extractUserMessageText,
+  isFinalAssistantTurn,
 } from "./session_metadata.ts";
+import type { PromptOrigin } from "./pending_user_prompt.ts";
 import { sessionStatusAfterAgentEnd, sessionStatusFromContext } from "./session_status.ts";
 
 interface SessionBinding {
@@ -34,6 +38,7 @@ interface SessionBinding {
 }
 
 const sessions = new Map<string, SessionBinding>();
+const lastPostedUserPromptBySession = new Map<string, string>();
 let degradedNotified = false;
 
 function isEphemeral(ctx: ExtensionContext): boolean {
@@ -231,6 +236,7 @@ async function handleSessionShutdown(ctx: ExtensionContext): Promise<void> {
       );
     }
     clearPendingUserPrompt(localId);
+    lastPostedUserPromptBySession.delete(localId);
   }
 
   if (sessions.size > 0) return;
@@ -274,27 +280,50 @@ export function registerHooks(pi: ExtensionAPI): void {
     }),
   );
 
-  pi.on("before_agent_start", (event, ctx) => {
+  pi.on("message_start", (event, ctx) => {
+    if (event.message.role !== "user") return;
+
+    const text = extractUserMessageText(event.message);
+    if (!text) return;
+
     const localId = ctx.sessionManager.getSessionId();
-    if (!peekPendingUserPrompt(localId)) {
-      setPendingUserPrompt(localId, event.prompt, "local");
+    const head = peekPendingUserPrompt(localId);
+    let promptOrigin: PromptOrigin = "local";
+    if (head?.origin === "telegram" && head.text === text) {
+      promptOrigin = "telegram";
+    } else {
+      setPendingUserPrompt(localId, text, "local");
     }
+
+    if (lastPostedUserPromptBySession.get(localId) === text) return;
+    lastPostedUserPromptBySession.set(localId, text);
+
+    void postEvent(localId, "agent_start", "running", {
+      userPrompt: text,
+      promptOrigin,
+    });
   });
 
-  pi.on("agent_start", (_event, ctx) => {
+  pi.on("turn_end", (event, ctx) => {
+    if (!isFinalAssistantTurn(event.message)) return;
+
+    const lastResult = extractAssistantMessageText(event.message);
+    if (!lastResult) return;
+    const cleanedResult = stripAnsi(lastResult).trim();
+    if (!cleanedResult) return;
+
     const localId = ctx.sessionManager.getSessionId();
-    const pending = peekPendingUserPrompt(localId);
-    void postEvent(
-      localId,
-      "agent_start",
-      "running",
-      pending
-        ? {
-            userPrompt: pending.text,
-            promptOrigin: pending.origin,
-          }
-        : undefined,
-    );
+    const pending = takePendingUserPrompt(localId);
+    const status = sessionStatusAfterAgentEnd(ctx);
+    const payload: Record<string, unknown> = { lastResult: cleanedResult };
+    if (pending) {
+      payload.userPrompt = pending.text;
+      payload.promptOrigin = pending.origin;
+    }
+
+    lastPostedUserPromptBySession.delete(localId);
+    void postEvent(localId, "agent_end", status, payload);
+    void postSessionMetadata(pi, ctx, localId, { messages: [event.message] });
   });
 
   pi.on("tool_execution_start", (event, ctx) => {
@@ -311,24 +340,7 @@ export function registerHooks(pi: ExtensionAPI): void {
 
   pi.on("agent_end", (event, ctx) => {
     const localId = ctx.sessionManager.getSessionId();
-    const status = sessionStatusAfterAgentEnd(ctx);
-    const pending = takePendingUserPrompt(localId);
-    const lastResult = extractLatestAssistantResponseFromMessages(event.messages);
-    const payload: Record<string, unknown> = {};
-    if (pending) {
-      payload.userPrompt = pending.text;
-      payload.promptOrigin = pending.origin;
-    }
-    if (lastResult) {
-      payload.lastResult = lastResult;
-    }
-    void postEvent(localId, "agent_end", status, Object.keys(payload).length > 0 ? payload : undefined);
     void postSessionMetadata(pi, ctx, localId, { messages: event.messages });
-  });
-
-  pi.on("turn_end", (event, ctx) => {
-    const localId = ctx.sessionManager.getSessionId();
-    void postSessionMetadata(pi, ctx, localId, { messages: [event.message] });
   });
 
   pi.registerCommand("control-status", {

@@ -5,7 +5,16 @@ interface PendingPrompt {
   origin: PromptOrigin;
 }
 
-const pendingBySession = new Map<string, PendingPrompt>();
+const pendingBySession = new Map<string, PendingPrompt[]>();
+
+function getQueue(sessionId: string): PendingPrompt[] {
+  let queue = pendingBySession.get(sessionId);
+  if (!queue) {
+    queue = [];
+    pendingBySession.set(sessionId, queue);
+  }
+  return queue;
+}
 
 export function setPendingUserPrompt(
   sessionId: string,
@@ -14,16 +23,20 @@ export function setPendingUserPrompt(
 ): void {
   const text = prompt.trim();
   if (!text) return;
-  pendingBySession.set(sessionId, { text, origin });
+  getQueue(sessionId).push({ text, origin });
 }
 
 export function peekPendingUserPrompt(sessionId: string): PendingPrompt | undefined {
-  return pendingBySession.get(sessionId);
+  return pendingBySession.get(sessionId)?.[0];
 }
 
 export function takePendingUserPrompt(sessionId: string): PendingPrompt | undefined {
-  const prompt = pendingBySession.get(sessionId);
-  pendingBySession.delete(sessionId);
+  const queue = pendingBySession.get(sessionId);
+  if (!queue?.length) return undefined;
+  const prompt = queue.shift();
+  if (queue.length === 0) {
+    pendingBySession.delete(sessionId);
+  }
   return prompt;
 }
 

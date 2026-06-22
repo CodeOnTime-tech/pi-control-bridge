@@ -38,14 +38,14 @@ function extractTextContent(content: unknown): string | undefined {
   return parts.join("\n");
 }
 
-function extractUserMessageText(message: unknown): string | undefined {
+export function extractUserMessageText(message: unknown): string | undefined {
   if (!message || typeof message !== "object") return undefined;
   const candidate = message as { role?: string; content?: unknown };
   if (candidate.role !== "user") return undefined;
   return extractTextContent(candidate.content);
 }
 
-function extractAssistantMessageText(message: unknown): string | undefined {
+export function extractAssistantMessageText(message: unknown): string | undefined {
   if (!message || typeof message !== "object") return undefined;
   const candidate = message as { role?: string; content?: unknown };
   if (candidate.role !== "assistant") return undefined;
@@ -78,6 +78,13 @@ export function extractLatestUserPromptFromMessages(messages: unknown[]): string
     if (text) return truncate(text, DESCRIPTION_MAX_LEN);
   }
   return undefined;
+}
+
+export function isFinalAssistantTurn(message: unknown): boolean {
+  if (!message || typeof message !== "object") return false;
+  const candidate = message as { role?: string; stopReason?: string };
+  if (candidate.role !== "assistant") return false;
+  return candidate.stopReason === "stop" || candidate.stopReason === "length";
 }
 
 export function extractLatestAssistantResponseFromMessages(messages: unknown[]): string | undefined {

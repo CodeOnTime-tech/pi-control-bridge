@@ -6,6 +6,7 @@ import {
   extractLatestAssistantResponseFromMessages,
   extractLatestUserPromptFromMessages,
   extractLatestUserPromptFromSession,
+  isFinalAssistantTurn,
 } from "../../extension/session_metadata.ts";
 
 describe("session_metadata", () => {
@@ -122,5 +123,12 @@ describe("session_metadata", () => {
     const longText = "a".repeat(5000);
     const text = extractLatestAssistantResponseFromMessages([{ role: "assistant", content: longText }]);
     expect(text).toBe(longText);
+  });
+
+  it("detects final assistant turns for telegram delivery", () => {
+    expect(isFinalAssistantTurn({ role: "assistant", stopReason: "stop", content: "ok" })).toBe(true);
+    expect(isFinalAssistantTurn({ role: "assistant", stopReason: "length", content: "ok" })).toBe(true);
+    expect(isFinalAssistantTurn({ role: "assistant", stopReason: "toolUse", content: "" })).toBe(false);
+    expect(isFinalAssistantTurn({ role: "user", stopReason: "stop", content: "hi" })).toBe(false);
   });
 });

@@ -22,6 +22,33 @@ describe("pending_user_prompt", () => {
     expect(takePendingUserPrompt("sess-1")).toBeUndefined();
   });
 
+  it("keeps queued prompts in fifo order", () => {
+    setPendingUserPrompt("sess-queue", "Привет1");
+    setPendingUserPrompt("sess-queue", "Привет2");
+    setPendingUserPrompt("sess-queue", "Привет3");
+
+    expect(peekPendingUserPrompt("sess-queue")).toEqual({
+      text: "Привет1",
+      origin: "local",
+    });
+    expect(takePendingUserPrompt("sess-queue")).toEqual({
+      text: "Привет1",
+      origin: "local",
+    });
+    expect(peekPendingUserPrompt("sess-queue")).toEqual({
+      text: "Привет2",
+      origin: "local",
+    });
+    expect(takePendingUserPrompt("sess-queue")).toEqual({
+      text: "Привет2",
+      origin: "local",
+    });
+    expect(takePendingUserPrompt("sess-queue")).toEqual({
+      text: "Привет3",
+      origin: "local",
+    });
+  });
+
   it("tracks telegram origin separately", () => {
     setPendingUserPrompt("sess-2", "from telegram", "telegram");
 
