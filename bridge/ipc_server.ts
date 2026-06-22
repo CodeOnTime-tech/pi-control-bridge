@@ -6,7 +6,7 @@ import { serve } from "@hono/node-server";
 import { IPC_COMMAND_WAIT_TIMEOUT_MS, PACKAGE_VERSION } from "../shared/constants.ts";
 import { shouldProbeTelegramLink } from "../shared/device_state.ts";
 import type { Logger } from "../shared/logger.ts";
-import { buildAlreadyLinkedTelegramResponse } from "../shared/telegram.ts";
+import { buildAlreadyLinkedTelegramResponse, resolveBotInfo } from "../shared/telegram.ts";
 import type {
   BridgeStatus,
   ControlStatus,
@@ -82,7 +82,7 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
       ipcPort: deps.ipcPort,
       version: PACKAGE_VERSION,
       telegram: { linked: false },
-      bot: {},
+      bot: resolveBotInfo(),
       ...buildBridgeDiagnostics(deps),
     };
 
@@ -106,7 +106,7 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
             ...base,
             deviceId: state.deviceId ?? base.deviceId,
             telegram: { linked: true },
-            bot: {},
+            bot: resolveBotInfo(),
             degraded: true,
           } satisfies ControlStatus);
         }
@@ -120,7 +120,7 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
         ...base,
         deviceId: state.deviceId ?? base.deviceId,
         telegram: { linked: false },
-        bot: {},
+        bot: resolveBotInfo(),
       } satisfies ControlStatus);
     }
 
@@ -131,7 +131,7 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
           ...base,
           deviceId: state.deviceId ?? base.deviceId,
           telegram: { linked: false },
-          bot: {},
+          bot: resolveBotInfo(),
         } satisfies ControlStatus);
       }
 
@@ -149,7 +149,7 @@ export function createIpcApp(deps: IpcServerDeps): Hono {
           ...base,
           deviceId: state.deviceId ?? base.deviceId,
           telegram: { linked: false },
-          bot: {},
+          bot: resolveBotInfo(),
           degraded: true,
         } satisfies ControlStatus);
       }

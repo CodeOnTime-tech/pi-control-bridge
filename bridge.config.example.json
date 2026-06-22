@@ -1,5 +1,5 @@
 {
-  "hub_url": "http://127.0.0.1:8000",
+  "hub_url": "https://pi.codeontime.ru",
   "poll_interval_sec": 5,
   "heartbeat_interval_sec": 15,
   "command_batch_size": 10,

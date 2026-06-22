@@ -25,6 +25,15 @@ describe("telegram helpers", () => {
     expect(parsed.expiresAt).toBe("2026-06-20T12:00:00Z");
   });
 
+  it("uses default bot username when hub omits bot_username", () => {
+    const parsed = parseTelegramLinkResponse({
+      token: "tok",
+      expires_at: "2026-06-20T12:00:00Z",
+    });
+    expect(parsed.botUsername).toBe("pi_codeontime_ru_bot");
+    expect(parsed.botLink).toBe("https://t.me/pi_codeontime_ru_bot?start=tok");
+  });
+
   it("parses hub connection info from /me", () => {
     const parsed = parseHubConnectionInfo({
       device_id: "dev-1",

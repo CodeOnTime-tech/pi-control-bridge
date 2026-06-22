@@ -1,3 +1,5 @@
+import { DEFAULT_BOT_USERNAME } from "./constants.ts";
+
 export interface TelegramLinkResponse {
   token: string;
   expiresAt: string;
@@ -31,13 +33,26 @@ export function buildTelegramBotLink(botUsername: string, token?: string): strin
   return `${base}?start=${encodeURIComponent(token)}`;
 }
 
+export function resolveBotInfo(bot: HubBotInfo = {}): HubBotInfo {
+  const username =
+    typeof bot.username === "string" && bot.username.length > 0
+      ? bot.username
+      : DEFAULT_BOT_USERNAME;
+  const link =
+    typeof bot.link === "string" && bot.link.length > 0
+      ? bot.link
+      : buildTelegramBotLink(username);
+  return { username, link };
+}
+
 export function buildAlreadyLinkedTelegramResponse(connection: HubConnectionInfo): TelegramLinkResponse {
+  const bot = resolveBotInfo(connection.bot);
   return {
     token: "",
     expiresAt: "",
     alreadyLinked: true,
-    botUsername: connection.bot.username,
-    botLink: connection.bot.link,
+    botUsername: bot.username,
+    botLink: bot.link,
     telegramUsername: connection.telegram.username,
   };
 }
@@ -55,14 +70,12 @@ export function parseTelegramLinkResponse(raw: Record<string, unknown>): Telegra
   const botUsername =
     typeof botUsernameRaw === "string" && botUsernameRaw.length > 0
       ? botUsernameRaw
-      : undefined;
+      : DEFAULT_BOT_USERNAME;
   const botLinkRaw = raw.bot_link ?? raw.botLink;
   const botLink =
     typeof botLinkRaw === "string" && botLinkRaw.length > 0
       ? botLinkRaw
-      : botUsername
-        ? buildTelegramBotLink(botUsername, token)
-        : undefined;
+      : buildTelegramBotLink(botUsername, token);
 
   return { token, expiresAt, botUsername, botLink, alreadyLinked, telegramUsername };
 }
@@ -128,9 +141,9 @@ export function parseHubConnectionInfo(raw: Record<string, unknown>): HubConnect
       username: telegramUsername,
       chatId: Number.isFinite(chatId) ? chatId : undefined,
     },
-    bot: {
+    bot: resolveBotInfo({
       username: botUsername,
       link: botLink,
-    },
+    }),
   };
 }
